@@ -4,6 +4,8 @@ main
 Improvements:
 - jless no longer declares a minimum supported Rust version and now uses
   the 2024 edition; build it with a recent stable Rust toolchain.
+- Release binaries are now built for Linux x86_64, Linux ARM64, and macOS
+  Apple Silicon. Intel macOS binaries are no longer provided.
 - [Issue #143]: `ctrl-z` will now send jless to the background
 - `:w[rite] <file>` and `:w[rite]! <file>` can be used to write the
   current input to a file

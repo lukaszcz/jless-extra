@@ -12,27 +12,22 @@ jobs:
     strategy:
       matrix:
         platform:
-          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu  }
-          - { os: macos-latest , target: x86_64-apple-darwin       }
+          - { os: ubuntu-latest   , target: x86_64-unknown-linux-gnu  }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu }
+          - { os: macos-latest    , target: aarch64-apple-darwin      }
     runs-on: ${{ matrix.platform.os }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v7
       - name: Install Rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
-          override: true
-          target: ${{ matrix.platform.target }}
-          components: clippy, rustfmt
+          targets: ${{ matrix.platform.target }}
       - name: Install clipboard dependencies
-        if: ${{ matrix.platform.os == 'ubuntu-latest' }}
+        if: ${{ startsWith(matrix.platform.os, 'ubuntu') }}
         run: sudo apt install -y libxcb-shape0-dev libxcb-xfixes0-dev
       - name: Build
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --verbose --release --target=${{ matrix.platform.target }}
+        run: cargo build --verbose --release --target=${{ matrix.platform.target }}
       - name: Strip binary
         run: strip target/${{ matrix.platform.target }}/release/jless
       - name: Compress binary
@@ -40,7 +35,7 @@ jobs:
           mv target/${{ matrix.platform.target }}/release/jless .
           zip -X jless-${{ matrix.platform.target }}.zip jless
       - name: Upload binary
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v7
         with:
-          name: jless-${{ matrix.platform.target }}.zip
           path: jless-${{ matrix.platform.target }}.zip
+          archive: false
