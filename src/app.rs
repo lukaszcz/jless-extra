@@ -4,8 +4,8 @@ use std::io;
 use std::io::Write;
 
 use clipboard::{ClipboardContext, ClipboardProvider};
-use rustyline::error::ReadlineError;
 use rustyline::Editor;
+use rustyline::error::ReadlineError;
 use termion::event::Key;
 use termion::event::MouseButton::{Left, WheelDown, WheelUp};
 use termion::event::MouseEvent::Press;
@@ -15,7 +15,7 @@ use termion::screen::{ToAlternateScreen, ToMainScreen};
 use crate::flatjson;
 use crate::input::TuiEvent;
 use crate::input::TuiEvent::{KeyEvent, MouseEvent, WinChEvent};
-use crate::jsonstringunescaper::{safe_unescape_json_string, UnescapeError};
+use crate::jsonstringunescaper::{UnescapeError, safe_unescape_json_string};
 use crate::lineprinter::JS_IDENTIFIER;
 use crate::options::{DataFormat, Opt};
 use crate::screenwriter::{MessageSeverity, ScreenWriter};
@@ -243,11 +243,11 @@ impl App {
 
                     self.input_buffer.clear();
 
-                    if let Some(content_target) = content_target {
-                        if self.print_content(content_target) {
-                            self.input_state = InputState::WaitingForAnyKeyPress;
-                            continue;
-                        }
+                    if let Some(content_target) = content_target
+                        && self.print_content(content_target)
+                    {
+                        self.input_state = InputState::WaitingForAnyKeyPress;
+                        continue;
                     }
 
                     self.input_state = InputState::Default;
@@ -870,14 +870,9 @@ impl App {
                     _ => unreachable!(),
                 };
 
-                match self
-                    .viewer
+                self.viewer
                     .flatjson
-                    .build_path_to_node(path_type, focused_row_index)
-                {
-                    Ok(path) => path,
-                    Err(err) => return Err(err),
-                }
+                    .build_path_to_node(path_type, focused_row_index)?
             }
         };
 

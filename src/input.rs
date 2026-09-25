@@ -1,9 +1,9 @@
 use signal_hook::consts::SIGWINCH;
 use signal_hook::low_level::pipe;
-use termion::event::{parse_event, Event, Key, MouseEvent};
+use termion::event::{Event, Key, MouseEvent, parse_event};
 
 use std::io;
-use std::io::{stdin, Read, Stdin};
+use std::io::{Read, Stdin, stdin};
 use std::os::unix::io::AsRawFd;
 use std::os::unix::net::UnixStream;
 
@@ -182,10 +182,10 @@ impl TuiInput {
     }
 
     fn get_event_from_buffered_input(&mut self) -> Option<io::Result<TuiEvent>> {
-        if !self.buffered_input.has_buffered_data() {
-            if let Some(err) = self.buffered_input.read_more_if_needed() {
-                return Some(Err(err));
-            }
+        if !self.buffered_input.has_buffered_data()
+            && let Some(err) = self.buffered_input.read_more_if_needed()
+        {
+            return Some(Err(err));
         }
 
         if self.buffered_input.take_pure_escape() {

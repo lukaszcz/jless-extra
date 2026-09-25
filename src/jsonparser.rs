@@ -100,44 +100,24 @@ impl<'a> JsonParser<'a> {
 
         self.max_depth = self.max_depth.max(self.parents.len());
 
-        loop {
-            match self.peek_token()? {
-                JsonToken::OpenCurly => {
-                    return self.parse_object();
-                }
-                JsonToken::OpenSquare => {
-                    return self.parse_array();
-                }
-                JsonToken::Null => {
-                    return self.parse_null();
-                }
-                JsonToken::True => {
-                    return self.parse_bool(true);
-                }
-                JsonToken::False => {
-                    return self.parse_bool(false);
-                }
-                JsonToken::Number => {
-                    return self.parse_number();
-                }
-                JsonToken::String => {
-                    return self.parse_string();
-                }
+        match self.peek_token()? {
+            JsonToken::OpenCurly => self.parse_object(),
+            JsonToken::OpenSquare => self.parse_array(),
+            JsonToken::Null => self.parse_null(),
+            JsonToken::True => self.parse_bool(true),
+            JsonToken::False => self.parse_bool(false),
+            JsonToken::Number => self.parse_number(),
+            JsonToken::String => self.parse_string(),
 
-                JsonToken::Whitespace | JsonToken::Newline => {
-                    panic!("Should have just consumed whitespace");
-                }
-
-                JsonToken::Error => {
-                    return Err("Parse error".to_string());
-                }
-                JsonToken::CloseCurly
-                | JsonToken::CloseSquare
-                | JsonToken::Colon
-                | JsonToken::Comma => {
-                    return Err(format!("Unexpected character: {:?}", self.tokenizer.span()));
-                }
+            JsonToken::Whitespace | JsonToken::Newline => {
+                panic!("Should have just consumed whitespace");
             }
+
+            JsonToken::Error => Err("Parse error".to_string()),
+            JsonToken::CloseCurly
+            | JsonToken::CloseSquare
+            | JsonToken::Colon
+            | JsonToken::Comma => Err(format!("Unexpected character: {:?}", self.tokenizer.span())),
         }
     }
 

@@ -2,6 +2,8 @@ main
 ====
 
 Improvements:
+- jless no longer declares a minimum supported Rust version and now uses
+  the 2024 edition; build it with a recent stable Rust toolchain.
 - [Issue #143]: `ctrl-z` will now send jless to the background
 - `:w[rite] <file>` and `:w[rite]! <file>` can be used to write the
   current input to a file

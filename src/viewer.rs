@@ -1011,13 +1011,13 @@ impl JsonViewer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::flatjson::{parse_top_level_json, NIL};
+    use crate::flatjson::{NIL, parse_top_level_json};
 
     impl OptionIndex {
-        pub fn to_usize(&self) -> usize {
+        pub fn to_usize(self) -> usize {
             match self {
                 OptionIndex::Nil => NIL,
-                OptionIndex::Index(i) => *i,
+                OptionIndex::Index(i) => i,
             }
         }
     }

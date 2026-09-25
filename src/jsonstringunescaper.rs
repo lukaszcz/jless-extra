@@ -158,7 +158,7 @@ pub fn safe_unescape_json_string(s: &str) -> Result<String, UnescapeError> {
 // Unescapes a syntactically valid JSON string into a valid UTF-8 string, including
 // control characters.
 #[allow(dead_code)] // Only used with #[cfg(feature = "sexp")], but we want to write
-                    // regular tests for it
+// regular tests for it
 pub fn unsafe_unescape_json_string(s: &str) -> Result<String, UnescapeError> {
     unescape_json_string(s, false)
 }

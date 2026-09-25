@@ -1385,7 +1385,7 @@ mod tests {
         line.terminal.clear_output();
 
         line.print_focus_and_container_indicators(3)?;
-        assert_eq!(format!("{FOCUSED_LINE}"), line.terminal.output());
+        assert_eq!(FOCUSED_LINE.to_string(), line.terminal.output());
         line.terminal.clear_output();
 
         line.print_focus_and_container_indicators(2)?;
@@ -1414,14 +1414,14 @@ mod tests {
         };
 
         line.print_focus_and_container_indicators(100)?;
-        assert_eq!(format!("{EXPANDED_CONTAINER}"), line.terminal.output());
+        assert_eq!(EXPANDED_CONTAINER.to_string(), line.terminal.output());
         line.terminal.clear_output();
 
         line.focused = true;
 
         line.print_focus_and_container_indicators(100)?;
         assert_eq!(
-            format!("{FOCUSED_EXPANDED_CONTAINER}"),
+            FOCUSED_EXPANDED_CONTAINER.to_string(),
             line.terminal.output()
         );
         line.terminal.clear_output();

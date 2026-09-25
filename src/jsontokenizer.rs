@@ -26,7 +26,9 @@ pub enum JsonToken {
     #[regex(r"-?(0|([1-9][0-9]*))(\.[0-9]+)?([eE][-+]?[0-9]+)?")]
     Number,
     // I get an error when I do [0-9a-fA-F]{4}.
-    #[regex("\"((\\\\([\"\\\\/bfnrt]|u[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]))|[^\"\\\\\x00-\x1F])*\"")]
+    #[regex(
+        "\"((\\\\([\"\\\\/bfnrt]|u[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]))|[^\"\\\\\x00-\x1F])*\""
+    )]
     String,
 
     // Whitespace; need separate newline token to handle newline-delimited JSON.

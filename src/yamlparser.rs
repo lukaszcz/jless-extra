@@ -1,5 +1,5 @@
-use yaml_rust::yaml::{Array, Hash, Yaml};
 use yaml_rust::YamlLoader;
+use yaml_rust::yaml::{Array, Hash, Yaml};
 
 use crate::flatjson::{ContainerType, Index, OptionIndex, Row, Value};
 

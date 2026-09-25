@@ -19,11 +19,7 @@ impl TTYDimensions {
     pub fn without_status_bar(&self) -> TTYDimensions {
         TTYDimensions {
             width: self.width,
-            height: if self.height < STATUS_BAR_HEIGHT {
-                0
-            } else {
-                self.height - STATUS_BAR_HEIGHT
-            },
+            height: self.height.saturating_sub(STATUS_BAR_HEIGHT),
         }
     }
 }

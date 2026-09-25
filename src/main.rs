@@ -10,7 +10,6 @@ extern crate libc_stdhandle;
 use std::fs::File;
 use std::io;
 use std::io::Read;
-use std::path::PathBuf;
 
 use clap::Parser;
 use termion::cursor::HideCursor;
@@ -110,7 +109,7 @@ fn get_input_and_filename(opt: &Opt) -> io::Result<(String, String)> {
             io::stdin().read_to_string(&mut input_string)?;
         }
         Some(path) => {
-            if *path == PathBuf::from("-") {
+            if path.as_os_str() == "-" {
                 filename = "STDIN".to_string();
                 io::stdin().read_to_string(&mut input_string)?;
             } else {

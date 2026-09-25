@@ -91,7 +91,7 @@ impl SearchState {
         (regex_input, case_sensitive)
     }
 
-    fn invert_square_and_curly_bracket_escaping(regex: &str) -> Cow<str> {
+    fn invert_square_and_curly_bracket_escaping(regex: &str) -> Cow<'_, str> {
         SQUARE_AND_CURLY_BRACKETS.replace_all(regex, |caps: &Captures| match &caps[0] {
             "\\[" => "[".to_owned(),
             "[" => "\\[".to_owned(),
@@ -233,7 +233,7 @@ impl SearchState {
     /// Return an iterator over all the stored matches. We pass in a
     /// start index that will be used to efficiently skip any matches
     /// before that index.
-    pub fn matches_iter(&self, range_start: usize) -> MatchRangeIter {
+    pub fn matches_iter(&self, range_start: usize) -> MatchRangeIter<'_> {
         match self.immediate_state {
             ImmediateSearchState::NotSearching => STATIC_EMPTY_SLICE.iter(),
             ImmediateSearchState::MatchesVisible
@@ -576,7 +576,7 @@ mod tests {
         if let Some((_, wrapped)) = search.active_search_state() {
             assert_eq!(wrapped, expected);
         } else {
-            assert!(false, "Not in an active search state");
+            panic!("Not in an active search state");
         }
     }
 }
