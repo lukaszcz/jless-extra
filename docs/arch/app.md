@@ -1,6 +1,6 @@
 # Event Loop and Input
 
-`App` owns the viewer, screen writer, search state, input state, count buffer, status message, and clipboard context. It is the only place that knows key bindings.
+`App` owns the viewer, screen writer, search state, input state, count buffer, and status message. It is the only place that knows key bindings.
 
 ## Terminal Setup and Event Source
 
@@ -19,12 +19,13 @@ Each event is handled, then the screen is redrawn and the message cleared. Handl
 ## Side-Effecting Commands
 
 - **`:` commands** — parsed into a `Command`: quit, help, `set [no]number`/`[no]relativenumber`/`...!`, and `write`/`writesexp` (with `!` to overwrite).
-- **Copy and print** — one content extractor (pretty or one-line value, unescaped string, key, dot/bracket/query path) feeds both the clipboard and printing to the main screen, where mouse button tracking is disabled so the user can select text.
+- **Copy and print** — one content extractor (pretty or one-line value, unescaped string, key, dot/bracket/query path) feeds OSC 52 clipboard writes and printing to the main screen, where mouse button tracking is disabled so the user can select text.
 - **Help** — pipes the embedded `jless.help` to `less -r` on the main screen.
 - **Suspend** — Ctrl-Z restores the terminal, sends `SIGSTOP`, then restores the TUI and redraws.
 
 ## Code Entry Points
 
 - `src/app.rs` — `App`, `InputState`, key bindings in `run`, `parse_command`, content extraction, copy/print/write, help, suspend.
+- `src/osc52.rs` — base64 encoding and OSC 52 clipboard output.
 - `src/input.rs` — `/dev/tty` remapping, `TuiEvent`, the poll-based event iterator.
 - `src/main.rs` — terminal wrapping and app construction.

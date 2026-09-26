@@ -2,6 +2,9 @@ main
 ====
 
 Improvements:
+- Clipboard copy commands now use OSC 52, so Linux builds no longer need
+  X11 clipboard development libraries. OSC 52 must be supported and enabled
+  by the terminal.
 - jless no longer declares a minimum supported Rust version and now uses
   the 2024 edition; build it with a recent stable Rust toolchain.
 - Release binaries are now built for Linux x86_64, Linux ARM64, and macOS

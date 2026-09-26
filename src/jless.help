@@ -91,13 +91,13 @@
                               [1mCOPYING AND PRINTING[0m
 
       You can copy various parts of the JSON file to your clipboard using
-      any one of a set of commands starting with 'y'.
+      any one of a set of commands starting with 'y'. Copying uses OSC 52 and
+      requires a terminal that supports and allows clipboard writes.
 
       Alternatively, you can print out values using 'p'. This is useful for
-      viewing long string values all at once, or if the clipboard functionality
-      is not working; mouse-tracking will be temporarily disabled, allowing you
-      to use your terminal's native clipboard capabilities to select and copy
-      the desired text.
+      viewing long string values all at once, or if your terminal does not
+      support clipboard writes; mouse-tracking will be temporarily disabled,
+      allowing you to select and copy the desired text.
 
   yy pp   Copy/print the currently focused value, pretty printed. When focused
             on the key/value pair of an object, this will [4mnot[0m include the key.

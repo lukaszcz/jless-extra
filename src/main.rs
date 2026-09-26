@@ -26,6 +26,7 @@ mod jsonstringunescaper;
 mod jsontokenizer;
 mod lineprinter;
 mod options;
+mod osc52;
 mod screenwriter;
 mod search;
 mod terminal;

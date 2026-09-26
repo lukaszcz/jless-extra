@@ -3,8 +3,7 @@ jless is a terminal pager for JSON and YAML data, written in Rust and shipped as
 ## Tech stack
 
 - Rust, edition 2024, latest stable toolchain (no minimum supported version is maintained; CI runs `just check` on stable, Linux x86_64/ARM64 and macOS)
-- `termion` (terminal I/O), `rustyline` (prompts), `logos` (JSON tokenizer), `yaml-rust`, `regex`, `clap` 4 (derive), `clipboard`
-- Building on Linux needs X11 clipboard headers: `sudo apt-get install libxcb1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev`
+- `termion` (terminal I/O), `rustyline` (prompts), `logos` (JSON tokenizer), `yaml-rust`, `regex`, `clap` 4 (derive), `base64` (OSC 52 clipboard encoding)
 
 ## Architecture and project structure
 

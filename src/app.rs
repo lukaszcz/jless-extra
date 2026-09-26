@@ -1,9 +1,7 @@
-use std::error::Error;
 use std::fs::File;
 use std::io;
 use std::io::Write;
 
-use clipboard::{ClipboardContext, ClipboardProvider};
 use rustyline::Editor;
 use rustyline::error::ReadlineError;
 use termion::event::Key;
@@ -31,7 +29,6 @@ pub struct App {
     input_filename: String,
     search_state: SearchState,
     message: Option<(String, MessageSeverity)>,
-    clipboard_context: Result<ClipboardContext, Box<dyn Error>>,
 }
 
 // State to determine how to process the next event input.
@@ -137,7 +134,6 @@ impl App {
             input_filename,
             search_state: SearchState::empty(),
             message: None,
-            clipboard_context: ClipboardProvider::new(),
         })
     }
 
@@ -318,17 +314,9 @@ impl App {
                     None
                 }
                 KeyEvent(Key::Char('y')) => {
-                    match &self.clipboard_context {
-                        Ok(_) => {
-                            self.input_state = InputState::PendingYCommand;
-                            self.input_buffer.clear();
-                            self.buffer_input(b'y');
-                        }
-                        Err(err) => {
-                            let msg = format!("Unable to access clipboard: {err}");
-                            self.set_error_message(msg);
-                        }
-                    }
+                    self.input_state = InputState::PendingYCommand;
+                    self.input_buffer.clear();
+                    self.buffer_input(b'y');
 
                     None
                 }
@@ -882,9 +870,6 @@ impl App {
     fn copy_content(&mut self, content_target: ContentTarget) {
         match self.get_content_target_data(content_target) {
             Ok(content) => {
-                // Checked when the user first hits 'y'.
-                let clipboard = self.clipboard_context.as_mut().unwrap();
-
                 let focused_row = &self.viewer.flatjson[self.viewer.focused_row];
 
                 let content_type = match content_target {
@@ -899,7 +884,9 @@ impl App {
                     ContentTarget::QueryPath => "query path",
                 };
 
-                if let Err(err) = clipboard.set_contents(content) {
+                if let Err(err) =
+                    crate::osc52::copy_to_clipboard(&mut self.screen_writer.stdout, &content)
+                {
                     self.set_error_message(format!(
                         "Unable to copy {content_type} to clipboard: {err}"
                     ));

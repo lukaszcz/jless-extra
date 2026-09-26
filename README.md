@@ -38,15 +38,6 @@ You can install `jless` using various package managers:
 The [releases](https://github.com/PaulJuliusMartinez/jless/releases)
 page also contains links to binaries for various architectures.
 
-## Dependencies
-
-On Linux systems, X11 libraries are needed to build clipboard access if
-building from source. On Ubuntu you can install these using:
-
-```
-sudo apt-get install libxcb1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev
-```
-
 ## Website
 
 [jless.io](https://jless.io) is the official website for `jless`. Code

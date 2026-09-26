@@ -16,6 +16,7 @@ default = []
 sexp = []
 
 [dependencies]
+base64 = "0.22"
 logos = "0.12.0"
 unicode-width = "0.1.5"
 unicode-segmentation = "1.7.1"
@@ -29,7 +30,6 @@ clap = { version = "4.0", features = ["derive"] }
 isatty = "0.1"
 libc-stdhandle = "0.1.0"
 yaml-rust = "0.4"
-clipboard = "0.5"
 
 [dev-dependencies]
 indoc = "1.0"
