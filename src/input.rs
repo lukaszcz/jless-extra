@@ -274,5 +274,7 @@ mod tests {
     fn test_parse_ctrl_arrows() {
         assert_eq!(parse_key(b"\x1b[1;5A"), Key::CtrlUp);
         assert_eq!(parse_key(b"\x1b[1;5B"), Key::CtrlDown);
+        assert_eq!(parse_key(b"\x1b[1;5D"), Key::CtrlLeft);
+        assert_eq!(parse_key(b"\x1b[1;5C"), Key::CtrlRight);
     }
 }
