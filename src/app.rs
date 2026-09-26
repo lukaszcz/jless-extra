@@ -18,6 +18,7 @@ use crate::lineprinter::JS_IDENTIFIER;
 use crate::options::{DataFormat, Opt};
 use crate::screenwriter::{MessageSeverity, ScreenWriter};
 use crate::search::{JumpDirection, SearchDirection, SearchState};
+use crate::terminal::Theme;
 use crate::types::TTYDimensions;
 use crate::viewer::{Action, JsonViewer, Mode};
 
@@ -114,6 +115,7 @@ impl App {
         data_format: DataFormat,
         input_filename: String,
         stdout: RawTerminal<Box<dyn Write>>,
+        theme: Theme,
     ) -> Result<App, String> {
         let flatjson = match Self::parse_input(data, data_format) {
             Ok(flatjson) => flatjson,
@@ -123,8 +125,13 @@ impl App {
         let mut viewer = JsonViewer::new(flatjson, opt.mode);
         viewer.scrolloff_setting = opt.scrolloff;
 
-        let screen_writer =
-            ScreenWriter::init(opt, stdout, Editor::<()>::new(), TTYDimensions::default());
+        let screen_writer = ScreenWriter::init(
+            opt,
+            stdout,
+            Editor::<()>::new(),
+            TTYDimensions::default(),
+            theme,
+        );
 
         Ok(App {
             viewer,

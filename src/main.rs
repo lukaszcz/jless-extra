@@ -66,8 +66,16 @@ fn main() {
         AlternateScreen::from(io::stdout()),
     ))) as Box<dyn std::io::Write>;
     let raw_stdout = stdout.into_raw_mode().unwrap();
+    let (theme, initial_input) = terminal::resolve_theme(opt.theme);
 
-    let mut app = match App::new(&opt, input_string, data_format, input_filename, raw_stdout) {
+    let mut app = match App::new(
+        &opt,
+        input_string,
+        data_format,
+        input_filename,
+        raw_stdout,
+        theme,
+    ) {
         Ok(jl) => jl,
         Err(err) => {
             eprintln!("{err}");
@@ -75,7 +83,7 @@ fn main() {
         }
     };
 
-    app.run(Box::new(input::get_input()));
+    app.run(Box::new(input::get_input(initial_input)));
 }
 
 fn print_pretty_printed_input(input: String, data_format: DataFormat) {

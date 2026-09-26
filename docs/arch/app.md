@@ -4,7 +4,7 @@
 
 ## Terminal Setup and Event Source
 
-Input data may come from stdin, so before the app starts `/dev/tty` is reopened as stdin; both key reading and `rustyline` prompts then read the terminal. Stdout is wrapped for the alternate screen, hidden cursor, mouse tracking, and raw mode. The event source reads stdin bytes and a `SIGWINCH` self-pipe, and parses them into `TuiEvent`s (key, mouse, resize, unknown bytes).
+Input data may come from stdin, so before the app starts `/dev/tty` is reopened as stdin; both key reading and `rustyline` prompts then read the terminal. Stdout is wrapped for the alternate screen, hidden cursor, mouse tracking, and raw mode. The selected theme is resolved at startup; automatic selection queries the terminal background and preserves any user input read with the response. The event source reads stdin bytes and a `SIGWINCH` self-pipe, and parses them into `TuiEvent`s (key, mouse, resize, unknown bytes).
 
 ## Event Loop
 

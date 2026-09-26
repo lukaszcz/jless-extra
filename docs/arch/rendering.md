@@ -16,7 +16,7 @@ Display state here, not in the viewer: line-number toggles, indentation reductio
 
 ## Terminal Abstraction
 
-`Terminal` is a `fmt::Write` trait with cursor positioning, clearing, and style operations. `AnsiTerminal` emits escape sequences into a string buffer and tracks the current style to skip redundant codes. Test terminals render plain text or visible escape names ([testing.md](testing.md)).
+`Terminal` is a `fmt::Write` trait with cursor positioning, clearing, and style operations. `AnsiTerminal` emits escape sequences into a string buffer, maps semantic colors through the selected light or dark palette, and tracks the current style to skip redundant codes. Test terminals render plain text or visible escape names ([testing.md](testing.md)).
 
 ## Code Entry Points
 

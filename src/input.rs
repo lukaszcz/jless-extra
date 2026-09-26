@@ -32,14 +32,14 @@ pub fn remap_dev_tty_to_stdin() {
     }
 }
 
-pub fn get_input() -> impl Iterator<Item = io::Result<TuiEvent>> {
+pub fn get_input(initial_input: Vec<u8>) -> impl Iterator<Item = io::Result<TuiEvent>> {
     let (sigwinch_read, sigwinch_write) = UnixStream::pair().unwrap();
     // NOTE: This overrides the SIGWINCH handler registered by rustyline.
     // We should maybe get a reference to the existing signal handler
     // and call it when appropriate, but it seems to only be used to handle
     // line wrapping, and it seems to work fine without it.
     pipe::register(SIGWINCH, sigwinch_write).unwrap();
-    TuiInput::new(stdin(), sigwinch_read)
+    TuiInput::new(stdin(), sigwinch_read, initial_input)
 }
 
 fn read_and_retry_on_interrupt(input: &mut Stdin, buf: &mut [u8]) -> io::Result<usize> {
@@ -67,11 +67,14 @@ struct BufferedInput<const N: usize> {
 }
 
 impl<const N: usize> BufferedInput<N> {
-    fn new(input: Stdin) -> BufferedInput<N> {
+    fn new(input: Stdin, initial_input: Vec<u8>) -> BufferedInput<N> {
+        let mut buffer = [0; N];
+        let buffer_size = initial_input.len().min(N);
+        buffer[..buffer_size].copy_from_slice(&initial_input[..buffer_size]);
         BufferedInput {
             input,
-            buffer: [0; N],
-            buffer_size: 0,
+            buffer,
+            buffer_size,
             buffer_index: 0,
             might_have_more_data: false,
         }
@@ -157,7 +160,7 @@ struct TuiInput {
 }
 
 impl TuiInput {
-    fn new(input: Stdin, sigwinch_pipe: UnixStream) -> TuiInput {
+    fn new(input: Stdin, sigwinch_pipe: UnixStream, initial_input: Vec<u8>) -> TuiInput {
         let sigwinch_fd = sigwinch_pipe.as_raw_fd();
         let stdin_fd = input.as_raw_fd();
 
@@ -177,7 +180,7 @@ impl TuiInput {
         TuiInput {
             poll_fds,
             sigwinch_pipe,
-            buffered_input: BufferedInput::new(input),
+            buffered_input: BufferedInput::new(input, initial_input),
         }
     }
 

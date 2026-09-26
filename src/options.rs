@@ -10,6 +10,13 @@ pub enum DataFormat {
     Yaml,
 }
 
+#[derive(PartialEq, Eq, Copy, Clone, Debug, ValueEnum)]
+pub enum ThemeOption {
+    Auto,
+    Dark,
+    Light,
+}
+
 /// A pager for JSON (or YAML) data
 #[derive(Debug, Parser)]
 #[command(name = "jless", version)]
@@ -28,6 +35,11 @@ pub struct Opt {
     /// The active mode can be toggled by pressing 'm'.
     #[arg(short, long, value_enum, hide_possible_values = true, default_value_t = Mode::Data)]
     pub mode: Mode,
+
+    /// Color theme. Auto detects the terminal background. The JLESS_THEME
+    /// environment variable can be used instead of this option.
+    #[arg(long, value_enum, env = "JLESS_THEME", default_value = "auto")]
+    pub theme: ThemeOption,
 
     // This godforsaken configuration to get both --line-numbers and --no-line-numbers to
     // work (with --line-numbers as the default) and --relative-line-numbers and
@@ -89,5 +101,35 @@ impl Opt {
         } else {
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::ffi::OsStr;
+
+    use clap::{CommandFactory, Parser};
+
+    use super::{Opt, ThemeOption};
+
+    #[test]
+    fn theme_can_be_selected_from_command_line() {
+        for (value, expected) in [
+            ("light", ThemeOption::Light),
+            ("dark", ThemeOption::Dark),
+            ("auto", ThemeOption::Auto),
+        ] {
+            let options = Opt::try_parse_from(["jless", "--theme", value]).unwrap();
+            assert_eq!(options.theme, expected);
+        }
+    }
+
+    #[test]
+    fn theme_uses_jless_theme_environment_variable() {
+        let has_environment_variable = Opt::command()
+            .get_arguments()
+            .any(|argument| argument.get_env() == Some(OsStr::new("JLESS_THEME")));
+
+        assert!(has_environment_variable);
     }
 }

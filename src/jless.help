@@ -257,3 +257,10 @@
       currently focused line. When both flags are set, the absolute line
       number will be displayed next to the focused lines, and all other line
       numbers will be relative. This matches vim's behavior.
+
+                                  [1mCOLOR THEMES[0m
+
+      jless detects whether the terminal has a light or dark background by
+      default. The theme can be selected with --theme light, --theme dark,
+      or --theme auto. The JLESS_THEME environment variable accepts the same
+      values.

@@ -1,9 +1,25 @@
 use std::fmt::{Result, Write};
+use std::io;
+use std::ops::Range;
+use std::time::{Duration, Instant};
+
+use crate::options::ThemeOption;
+
+const BACKGROUND_QUERY: &[u8] = b"\x1b]11;?\x1b\\";
+const BACKGROUND_RESPONSE_PREFIX: &[u8] = b"\x1b]11;";
+const BACKGROUND_QUERY_TIMEOUT: Duration = Duration::from_millis(150);
+const MAX_BACKGROUND_RESPONSE_BYTES: usize = 256;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Color {
     C16(u8),
     Default,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum Theme {
+    Dark,
+    Light,
 }
 
 // Commented out colors are unused.
@@ -78,6 +94,7 @@ pub trait Terminal: Write {
 pub struct AnsiTerminal {
     pub output: String,
     pub style: Style,
+    theme: Theme,
 }
 
 impl AnsiTerminal {
@@ -85,7 +102,12 @@ impl AnsiTerminal {
         AnsiTerminal {
             output,
             style: Style::default(),
+            theme: Theme::Dark,
         }
+    }
+
+    pub fn set_theme(&mut self, theme: Theme) {
+        self.theme = theme;
     }
 
     pub fn flush_contents<W: std::io::Write>(&mut self, out: &mut W) -> std::io::Result<usize> {
@@ -133,7 +155,7 @@ impl Terminal for AnsiTerminal {
 
     fn set_fg(&mut self, color: Color) -> Result {
         if self.style.fg != color {
-            match color {
+            match color_for_theme(color, self.theme, true) {
                 Color::C16(c) => write!(self, "\x1b[38;5;{c}m")?,
                 Color::Default => write!(self, "\x1b[39m")?,
             }
@@ -144,7 +166,7 @@ impl Terminal for AnsiTerminal {
 
     fn set_bg(&mut self, color: Color) -> Result {
         if self.style.bg != color {
-            match color {
+            match color_for_theme(color, self.theme, false) {
                 Color::C16(c) => write!(self, "\x1b[48;5;{c}m")?,
                 Color::Default => write!(self, "\x1b[49m")?,
             }
@@ -205,6 +227,209 @@ impl Terminal for AnsiTerminal {
     #[cfg(test)]
     fn clear_output(&mut self) {
         self.output.clear()
+    }
+}
+
+fn color_for_theme(color: Color, theme: Theme, foreground: bool) -> Color {
+    if theme == Theme::Dark {
+        return color;
+    }
+
+    match (foreground, color) {
+        (true, Color::C16(1)) => Color::C16(124),
+        (true, Color::C16(2)) => Color::C16(28),
+        (true, Color::C16(3)) => Color::C16(136),
+        (true, Color::C16(4 | 12)) => Color::C16(25),
+        (true, Color::C16(5)) => Color::C16(90),
+        (true, Color::C16(7)) => Color::C16(16),
+        (true, Color::C16(8)) => Color::C16(240),
+        (false, Color::C16(4)) => Color::C16(117),
+        (false, Color::C16(8)) => Color::C16(244),
+        (_, color) => color,
+    }
+}
+
+pub fn resolve_theme(theme_option: ThemeOption) -> (Theme, Vec<u8>) {
+    match theme_option {
+        ThemeOption::Dark => (Theme::Dark, Vec::new()),
+        ThemeOption::Light => (Theme::Light, Vec::new()),
+        ThemeOption::Auto => {
+            let (detected_theme, pending_input) = query_terminal_background();
+            let theme = detected_theme
+                .or_else(|| {
+                    std::env::var("COLORFGBG")
+                        .ok()
+                        .and_then(|value| theme_from_colorfgbg(&value))
+                })
+                .unwrap_or(Theme::Dark);
+            (theme, pending_input)
+        }
+    }
+}
+
+fn query_terminal_background() -> (Option<Theme>, Vec<u8>) {
+    use std::io::Write as _;
+
+    let mut stdout = io::stdout().lock();
+    if stdout
+        .write_all(BACKGROUND_QUERY)
+        .and_then(|()| stdout.flush())
+        .is_err()
+    {
+        return (None, Vec::new());
+    }
+    drop(stdout);
+
+    let start = Instant::now();
+    let mut received = Vec::new();
+
+    while start.elapsed() < BACKGROUND_QUERY_TIMEOUT
+        && received.len() < MAX_BACKGROUND_RESPONSE_BYTES
+    {
+        let remaining = BACKGROUND_QUERY_TIMEOUT.saturating_sub(start.elapsed());
+        let timeout = remaining.as_millis().clamp(1, i32::MAX as u128) as i32;
+        let mut poll_fd = libc::pollfd {
+            fd: libc::STDIN_FILENO,
+            events: libc::POLLIN,
+            revents: 0,
+        };
+
+        // SAFETY: poll_fd is a valid pointer to one pollfd, and the descriptor is stdin.
+        let poll_result = unsafe { libc::poll(&mut poll_fd, 1, timeout) };
+        if poll_result == 0 {
+            break;
+        }
+        if poll_result < 0 {
+            if io::Error::last_os_error().kind() == io::ErrorKind::Interrupted {
+                continue;
+            }
+            break;
+        }
+        if poll_fd.revents & (libc::POLLIN | libc::POLLHUP) == 0 {
+            break;
+        }
+
+        let mut byte = 0;
+        // SAFETY: byte is writable for one byte, and stdin is a valid descriptor.
+        let bytes_read =
+            unsafe { libc::read(libc::STDIN_FILENO, std::ptr::addr_of_mut!(byte).cast(), 1) };
+        if bytes_read != 1 {
+            break;
+        }
+        received.push(byte);
+
+        if let Some(theme) = remove_background_response(&mut received) {
+            return (theme, received);
+        }
+    }
+
+    (None, received)
+}
+
+fn background_response(input: &[u8]) -> Option<(Range<usize>, Option<Theme>)> {
+    let start = input
+        .windows(BACKGROUND_RESPONSE_PREFIX.len())
+        .position(|window| window == BACKGROUND_RESPONSE_PREFIX)?;
+    let content_start = start + BACKGROUND_RESPONSE_PREFIX.len();
+    let (end, terminator_len) =
+        (content_start..input.len()).find_map(|index| match input[index] {
+            b'\x07' => Some((index, 1)),
+            b'\x1b' if input.get(index + 1) == Some(&b'\\') => Some((index, 2)),
+            _ => None,
+        })?;
+    let theme = std::str::from_utf8(&input[content_start..end])
+        .ok()
+        .and_then(theme_from_rgb);
+    Some((start..end + terminator_len, theme))
+}
+
+fn remove_background_response(input: &mut Vec<u8>) -> Option<Option<Theme>> {
+    let (range, theme) = background_response(input)?;
+    input.drain(range);
+    Some(theme)
+}
+
+fn theme_from_rgb(rgb: &str) -> Option<Theme> {
+    let components = rgb.strip_prefix("rgb:")?.split('/').collect::<Vec<_>>();
+    if components.len() != 3 {
+        return None;
+    }
+    let [red, green, blue] = [
+        component_to_linear(components[0])?,
+        component_to_linear(components[1])?,
+        component_to_linear(components[2])?,
+    ];
+    let luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+    Some(if luminance >= 0.5 {
+        Theme::Light
+    } else {
+        Theme::Dark
+    })
+}
+
+fn component_to_linear(component: &str) -> Option<f64> {
+    if component.is_empty() || component.len() > 4 {
+        return None;
+    }
+    let value = u32::from_str_radix(component, 16).ok()? as f64;
+    let max_value = ((1u32 << (component.len() * 4)) - 1) as f64;
+    let srgb = value / max_value;
+    Some(if srgb <= 0.04045 {
+        srgb / 12.92
+    } else {
+        ((srgb + 0.055) / 1.055).powf(2.4)
+    })
+}
+
+fn theme_from_colorfgbg(colorfgbg: &str) -> Option<Theme> {
+    match colorfgbg.rsplit(';').next()?.parse::<u8>().ok()? {
+        0..=6 => Some(Theme::Dark),
+        7 | 15 => Some(Theme::Light),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod theme_tests {
+    use super::{AnsiTerminal, BLUE, GREEN, Terminal, Theme};
+
+    #[test]
+    fn light_theme_maps_semantic_colors_to_light_palette() {
+        let mut terminal = AnsiTerminal::new(String::new());
+        terminal.set_theme(Theme::Light);
+
+        terminal.set_fg(GREEN).unwrap();
+        terminal.set_bg(BLUE).unwrap();
+
+        assert_eq!(terminal.output, "\x1b[38;5;28m\x1b[48;5;117m");
+    }
+
+    #[test]
+    fn background_color_response_detects_light_and_dark_themes() {
+        assert_eq!(
+            super::theme_from_rgb("rgb:ffff/ffff/ffff"),
+            Some(Theme::Light)
+        );
+        assert_eq!(
+            super::theme_from_rgb("rgb:0000/0000/0000"),
+            Some(Theme::Dark)
+        );
+    }
+
+    #[test]
+    fn background_query_bytes_are_removed_without_losing_user_input() {
+        let mut input = b"x\x1b]11;rgb:ffff/ffff/ffff\x07y".to_vec();
+
+        let theme = super::remove_background_response(&mut input);
+
+        assert_eq!(theme, Some(Some(Theme::Light)));
+        assert_eq!(input, b"xy");
+    }
+
+    #[test]
+    fn colorfgbg_fallback_detects_light_and_dark_backgrounds() {
+        assert_eq!(super::theme_from_colorfgbg("15;0"), Some(Theme::Dark));
+        assert_eq!(super::theme_from_colorfgbg("0;15"), Some(Theme::Light));
     }
 }
 

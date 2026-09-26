@@ -6,7 +6,7 @@ Start here for the system shape, then read only the subsystem documents relevant
 
 ## System Shape
 
-- **Entry** — parses CLI options, reads the input file or stdin, picks the format (flag, else file extension, else JSON), and either pretty-prints (non-TTY stdout) or sets up the terminal and starts the app.
+- **Entry** — parses CLI options, reads the input file or stdin, picks the format (flag, else file extension, else JSON), and either pretty-prints (non-TTY stdout) or resolves the terminal theme, sets up the terminal, and starts the app.
 - **Data model** — `FlatJson`: the row array, a canonical single-line text that rows index into, and the maximum depth. Built by the JSON or YAML parser; every other layer reads it.
 - **Controller** — `App`: the event loop, multi-key input states and count prefixes, `:` commands, search, copy/print/write, help, and suspend.
 - **Viewer** — `JsonViewer`: focused row, window position, display mode, and collapse state, changed only through `Action`s.

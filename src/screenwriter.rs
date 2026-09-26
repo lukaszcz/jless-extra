@@ -15,7 +15,7 @@ use crate::lineprinter::LineNumber;
 use crate::options::Opt;
 use crate::search::{MatchRangeIter, SearchState};
 use crate::terminal;
-use crate::terminal::{AnsiTerminal, Terminal};
+use crate::terminal::{AnsiTerminal, Terminal, Theme};
 use crate::truncatedstrview::{TruncatedStrSlice, TruncatedStrView};
 use crate::types::TTYDimensions;
 use crate::viewer::{JsonViewer, Mode};
@@ -59,12 +59,16 @@ impl ScreenWriter {
         stdout: RawTerminal<Box<dyn std::io::Write>>,
         command_editor: Editor<()>,
         dimensions: TTYDimensions,
+        theme: Theme,
     ) -> Self {
+        let mut terminal = AnsiTerminal::new(String::new());
+        terminal.set_theme(theme);
+
         ScreenWriter {
             stdout,
             command_editor,
             dimensions,
-            terminal: AnsiTerminal::new(String::new()),
+            terminal,
             show_line_numbers: options.show_line_numbers,
             show_relative_line_numbers: options.show_relative_line_numbers,
             indentation_reduction: 0,
