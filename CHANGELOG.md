@@ -3,7 +3,8 @@ main
 
 Improvements:
 - Long values now wrap onto multiple lines, with `↩` marking each wrap, so
-  they can always be seen in full. Scrolling moves by screen lines. Use
+  they can always be seen in full. Scrolling moves by screen lines, and
+  search jumps scroll to the line containing the match. Use
   `--no-wrap` or `:set nowrap` to truncate long values instead
   (`:set wrap` and `:set wrap!` turn wrapping on or toggle it).
 - Add light and dark color themes, detected from the terminal by default and

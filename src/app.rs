@@ -744,9 +744,9 @@ impl App {
             jump_direction,
             jumps,
         );
-        Some(Action::JumpTo {
+        Some(Action::JumpToSearchMatch {
             line: destination,
-            make_visible: false,
+            match_start: self.search_state.current_match_range().start,
         })
     }
 

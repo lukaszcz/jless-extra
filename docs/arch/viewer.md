@@ -15,7 +15,7 @@ All state changes go through `perform_action(Action)`: line and sibling movement
 
 Focus moves by rows; the window moves by screen lines (`ScreenLine`), so scrolling can pass through a row taller than the screen. After each action, window policies apply, chosen per action:
 
-- **Track focus** — keep the whole focused row visible with scrolloff padding, or its start if it is taller than the screen; a large jump re-centers the focused row about a third of the way down.
+- **Track focus** — keep the whole focused row visible with scrolloff padding, or its start if it is taller than the screen; a large jump re-centers the focused row about a third of the way down. Search jumps then also scroll to the line showing the match.
 - **Pin screen position** — keep the focused row's first line at the same screen line (mode toggle, sibling collapse/expand, layout changes, which then also track focus).
 - **Action-managed** — scrolling and jumps set the window themselves.
 

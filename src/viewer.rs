@@ -144,6 +144,13 @@ pub enum Action {
         make_visible: bool,
     },
 
+    // Like JumpTo without make_visible, but also scrolls to the line of a
+    // wrapped row that shows the match.
+    JumpToSearchMatch {
+        line: Index,
+        match_start: usize,
+    },
+
     PageUp(usize),
     PageDown(usize),
 
@@ -200,6 +207,7 @@ impl JsonViewer {
             Action::JumpUp(option_n) => self.jump_up(option_n),
             Action::JumpDown(option_n) => self.jump_down(option_n),
             Action::JumpTo { line, make_visible } => self.jump_to(line, make_visible),
+            Action::JumpToSearchMatch { line, .. } => self.jump_to(line, false),
             Action::PageUp(n) => self.scroll_up(self.dimensions.height as usize * n),
             Action::PageDown(n) => self.scroll_down(self.dimensions.height as usize * n),
             Action::MoveFocusedLineToTop => self.move_focused_line_to_top(),
@@ -230,6 +238,10 @@ impl JsonViewer {
         if track_window {
             self.ensure_focused_row_is_visible();
         }
+
+        if let Action::JumpToSearchMatch { match_start, .. } = action {
+            self.ensure_search_match_is_visible(match_start);
+        }
     }
 
     fn should_refocus_window(action: &Action) -> bool {
@@ -254,6 +266,7 @@ impl JsonViewer {
             Action::JumpUp(_) => false,
             Action::JumpDown(_) => false,
             Action::JumpTo { .. } => true,
+            Action::JumpToSearchMatch { .. } => true,
             Action::PageUp(_) => false,
             Action::PageDown(_) => false,
             Action::MoveFocusedLineToTop => false,
@@ -941,6 +954,20 @@ impl JsonViewer {
         }
     }
 
+    // Scrolls down, if needed, so the focused row's line showing the match is
+    // above the bottom scrolloff padding. Called after
+    // ensure_focused_row_is_visible, which shows the start of the row.
+    fn ensure_search_match_is_visible(&mut self, match_start: usize) {
+        let match_line = ScreenLine {
+            row: self.focused_row,
+            line: self.line_of_offset(self.focused_row, match_start),
+        };
+        let max_padding = (self.dimensions.height - self.scrolloff() - 1) as usize;
+        if self.lines_between(self.top(), match_line, max_padding + 1) > max_padding {
+            self.set_top(self.lines_before(match_line, max_padding));
+        }
+    }
+
     // Makes sure that the top row is visible. If not, the top row will be updated
     // to the first visible parent of the top row.
     //
@@ -1006,6 +1033,24 @@ impl JsonViewer {
             .print_line()
             .unwrap_or(1)
         })
+    }
+
+    // Index of the row's screen line that shows a canonical text offset.
+    fn line_of_offset(&self, row: Index, offset: usize) -> usize {
+        if self.row_height(row) == 1 {
+            return 0;
+        }
+
+        LinePrinter::for_row(
+            &mut NullTerminal,
+            &self.flatjson,
+            row,
+            self.mode,
+            &self.layout,
+            self.dimensions.width,
+        )
+        .line_of_offset(offset)
+        .unwrap_or(0)
     }
 
     fn prev_row(&self, row: Index) -> OptionIndex {
@@ -2549,5 +2594,34 @@ mod tests {
         layout.wrap = false;
         viewer.perform_action(Action::SetLayout(layout));
         assert_top(&viewer, 2, 0);
+    }
+
+    #[test]
+    fn test_jump_to_search_match_shows_its_line() {
+        // Row 5's lines: abcdefghi, jklmnopqr, stuvwxyz1, abcdefghi, ...
+        let mut viewer = wrapping_viewer(3, 0);
+        let first_match = viewer.flatjson[5].range.start + 1;
+        let last_match = viewer.flatjson.1.rfind("uvw").unwrap();
+
+        viewer.perform_action(Action::JumpToSearchMatch {
+            line: 5,
+            match_start: last_match,
+        });
+        assert_eq!(5, viewer.focused_row);
+        assert_top(&viewer, 5, 3);
+
+        viewer.perform_action(Action::JumpToSearchMatch {
+            line: 5,
+            match_start: first_match,
+        });
+        assert_top(&viewer, 5, 0);
+
+        // Nothing moves when the match is already on screen.
+        let mut viewer = wrapping_viewer(14, 0);
+        viewer.perform_action(Action::JumpToSearchMatch {
+            line: 5,
+            match_start: last_match,
+        });
+        assert_top(&viewer, 0, 0);
     }
 }

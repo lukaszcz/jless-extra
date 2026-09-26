@@ -264,7 +264,8 @@
       Long values are wrapped onto multiple lines by default, so they can
       always be seen in full. A ↩ at the end of a line marks where a value
       wraps. Scrolling commands move by screen lines, so values taller than
-      the screen can be scrolled through.
+      the screen can be scrolled through. Jumping to a search match scrolls
+      to the line containing it.
 
       When wrapping is off, long values are truncated and can be scrolled
       horizontally with '.', ',' and ';'.

@@ -23,7 +23,7 @@ With wrapping on, a primitive value that does not fit continues on further lines
 ## Code Entry Points
 
 - `src/screenwriter.rs` — `ScreenWriter`: screen, status bar, prompts, horizontal scroll; `ClippedTerminal`.
-- `src/lineprinter.rs` — `LinePrinter`, `LineLayout`, wrapping (`wrap_ranges`), and the line-mode vs data-mode rules (documented at the top of the file); `JS_IDENTIFIER`.
+- `src/lineprinter.rs` — `LinePrinter`, `LineLayout`, wrapping (`wrap_ranges`, `line_of_offset`), and the line-mode vs data-mode rules (documented at the top of the file); `JS_IDENTIFIER`.
 - `src/truncatedstrview.rs` — string fitting and scrolling.
 - `src/highlighting.rs` — styles and match highlighting.
 - `src/terminal.rs` — `Terminal`, `AnsiTerminal`, colors, `Style`, and the test terminals.

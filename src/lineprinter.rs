@@ -207,6 +207,9 @@ pub struct LinePrinter<'a, 'b> {
 
     // Whether long primitive values wrap onto further lines.
     pub wrap: bool,
+
+    // Set by print_line: canonical text offsets where continuation lines start.
+    wrapped_line_starts: Vec<usize>,
 }
 
 impl<'a, 'b> LinePrinter<'a, 'b> {
@@ -263,12 +266,23 @@ impl<'a, 'b> LinePrinter<'a, 'b> {
             emphasize_focused_search_match: true,
             cached_truncated_value: None,
             wrap: layout.wrap,
+            wrapped_line_starts: vec![],
         }
+    }
+
+    // Prints the row and returns the index of the screen line showing the
+    // given canonical text offset.
+    pub fn line_of_offset(&mut self, offset: usize) -> Result<usize, fmt::Error> {
+        self.print_line()?;
+        Ok(self
+            .wrapped_line_starts
+            .partition_point(|&start| start <= offset))
     }
 
     // Prints the row and returns the number of screen lines it takes.
     pub fn print_line(&mut self) -> Result<usize, fmt::Error> {
         self.terminal.reset_style()?;
+        self.wrapped_line_starts.clear();
 
         let mut available_space = self.width;
 
@@ -725,6 +739,8 @@ impl<'a, 'b> LinePrinter<'a, 'b> {
         for (i, piece) in pieces.iter().enumerate() {
             if i > 0 {
                 self.print_line_break(continuation_col)?;
+                self.wrapped_line_starts
+                    .push(value_range.start + piece.start);
             }
             self.highlight_str(
                 &value_ref[piece.clone()],
@@ -1472,6 +1488,7 @@ mod tests {
             emphasize_focused_search_match: true,
             cached_truncated_value: None,
             wrap: false,
+            wrapped_line_starts: vec![],
         }
     }
 
@@ -2400,6 +2417,22 @@ mod tests {
         };
         assert_eq!(1, line.print_line()?);
         assert_eq!(r#"          c: "ab…""#, line.terminal.output());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_line_of_offset_in_wrapped_value() -> std::fmt::Result {
+        let fj =
+            parse_top_level_json(r#"{"key": "abcdefghijklmnopqrstuvwxyz"}"#.to_owned()).unwrap();
+        let offset = |s: &str| fj.1.find(s).unwrap();
+        let mut term = TextOnlyTerminal::new();
+        let mut line = wrapping_line_printer(&mut term, &fj, 1, 20);
+
+        // Lines: `key: "abcdefghijk`, `lmnopqrstuv`, `wxyz"`.
+        for (s, expected_line) in [("key", 0), ("a", 0), ("k", 0), ("l", 1), ("v", 1), ("w", 2)] {
+            assert_eq!(expected_line, line.line_of_offset(offset(s))?, "{s}");
+        }
 
         Ok(())
     }
