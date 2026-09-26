@@ -7,7 +7,6 @@ use rustyline::error::ReadlineError;
 use termion::event::Key;
 use termion::event::MouseButton::{Left, WheelDown, WheelUp};
 use termion::event::MouseEvent::Press;
-use termion::raw::RawTerminal;
 use termion::screen::{ToAlternateScreen, ToMainScreen};
 
 use crate::flatjson;
@@ -16,7 +15,7 @@ use crate::input::TuiEvent::{KeyEvent, MouseEvent, WinChEvent};
 use crate::jsonstringunescaper::{UnescapeError, safe_unescape_json_string};
 use crate::lineprinter::{JS_IDENTIFIER, LineLayout};
 use crate::options::{DataFormat, Opt};
-use crate::screenwriter::{MessageSeverity, ScreenWriter};
+use crate::screenwriter::{MessageSeverity, ScreenWriter, TtyOutput};
 use crate::search::{JumpDirection, SearchDirection, SearchState};
 use crate::terminal::Theme;
 use crate::types::TTYDimensions;
@@ -115,7 +114,7 @@ impl App {
         data: String,
         data_format: DataFormat,
         input_filename: String,
-        stdout: RawTerminal<Box<dyn Write>>,
+        stdout: TtyOutput,
         theme: Theme,
     ) -> Result<App, String> {
         let flatjson = match Self::parse_input(data, data_format) {
@@ -347,11 +346,11 @@ impl App {
                             let lines = self.parse_input_buffer_as_number();
                             Some(Action::MoveDown(lines))
                         }
-                        Key::Ctrl('e') => {
+                        Key::Ctrl('e') | Key::CtrlDown => {
                             let lines = self.parse_input_buffer_as_number();
                             Some(Action::ScrollDown(lines))
                         }
-                        Key::Ctrl('y') => {
+                        Key::Ctrl('y') | Key::CtrlUp => {
                             let lines = self.parse_input_buffer_as_number();
                             Some(Action::ScrollUp(lines))
                         }

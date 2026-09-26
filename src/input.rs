@@ -257,3 +257,22 @@ pub enum TuiEvent {
     MouseEvent(MouseEvent),
     Unknown(Vec<u8>),
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse_key(bytes: &[u8]) -> Key {
+        let mut rest = bytes[1..].iter().map(|b| Ok(*b));
+        match parse_event(bytes[0], &mut rest) {
+            Ok(Event::Key(key)) => key,
+            event => panic!("{bytes:?} parsed as {event:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_ctrl_arrows() {
+        assert_eq!(parse_key(b"\x1b[1;5A"), Key::CtrlUp);
+        assert_eq!(parse_key(b"\x1b[1;5B"), Key::CtrlDown);
+    }
+}

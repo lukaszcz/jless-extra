@@ -1,10 +1,14 @@
 use std::collections::HashMap;
 use std::fmt::Write;
+use std::io::Write as _;
 use std::iter::Peekable;
 use std::ops::Range;
 
 use rustyline::Editor;
+use termion::cursor::HideCursor;
+use termion::input::MouseTerminal;
 use termion::raw::RawTerminal;
+use termion::screen::AlternateScreen;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
@@ -18,8 +22,11 @@ use crate::truncatedstrview::{TruncatedStrSlice, TruncatedStrView};
 use crate::types::TTYDimensions;
 use crate::viewer::{JsonViewer, Mode};
 
+/// Raw-mode stdout on the alternate screen, with a hidden cursor and mouse tracking.
+pub type TtyOutput = MouseTerminal<HideCursor<AlternateScreen<RawTerminal<std::io::Stdout>>>>;
+
 pub struct ScreenWriter {
-    pub stdout: RawTerminal<Box<dyn std::io::Write>>,
+    pub stdout: TtyOutput,
     pub command_editor: Editor<()>,
     pub dimensions: TTYDimensions,
     pub terminal: AnsiTerminal,
@@ -48,7 +55,7 @@ const SPACE_BETWEEN_PATH_AND_FILENAME: isize = 3;
 
 impl ScreenWriter {
     pub fn init(
-        stdout: RawTerminal<Box<dyn std::io::Write>>,
+        stdout: TtyOutput,
         command_editor: Editor<()>,
         dimensions: TTYDimensions,
         theme: Theme,

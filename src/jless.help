@@ -67,8 +67,8 @@
 
                                     [1mSCROLLING[0m
 
-  ^e        *  Scroll down one line (or [4mN[0m lines).
-  ^y        *  Scroll up   one line (or [4mN[0m lines).
+  ^e  ^DownArrow  *  Scroll down one line (or [4mN[0m lines).
+  ^y  ^UpArrow    *  Scroll up   one line (or [4mN[0m lines).
 
   ^d        *  Scroll down by half the height of the screen (or by [4mN[0m lines).
   ^u        *  Scroll up   by half the height of the screen (or by [4mN[0m lines).

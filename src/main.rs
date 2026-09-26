@@ -15,7 +15,7 @@ use clap::Parser;
 use termion::cursor::HideCursor;
 use termion::input::MouseTerminal;
 use termion::raw::IntoRawMode;
-use termion::screen::AlternateScreen;
+use termion::screen::IntoAlternateScreen;
 
 mod app;
 mod flatjson;
@@ -62,10 +62,13 @@ fn main() {
     // sure rustyline gets the /dev/tty input.
     input::remap_dev_tty_to_stdin();
 
-    let stdout = Box::new(MouseTerminal::from(HideCursor::from(
-        AlternateScreen::from(io::stdout()),
-    ))) as Box<dyn std::io::Write>;
-    let raw_stdout = stdout.into_raw_mode().unwrap();
+    let raw_stdout = MouseTerminal::from(HideCursor::from(
+        io::stdout()
+            .into_raw_mode()
+            .unwrap()
+            .into_alternate_screen()
+            .unwrap(),
+    ));
     let (theme, initial_input) = terminal::resolve_theme(opt.theme);
 
     let mut app = match App::new(
