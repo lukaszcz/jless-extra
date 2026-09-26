@@ -140,6 +140,7 @@ impl Terminal for AnsiTerminal {
     }
 
     fn set_style(&mut self, style: &Style) -> Result {
+        let style = &style_for_theme(*style, self.theme);
         self.set_fg(style.fg)?;
         self.set_bg(style.bg)?;
         self.set_inverted(style.inverted)?;
@@ -230,21 +231,46 @@ impl Terminal for AnsiTerminal {
     }
 }
 
+// Light theme adjusts styles whose dark rendering relies on the terminal
+// palette: faint text is too pale on light backgrounds, and inverted yellow
+// search matches would show light text on a dark yellow box.
+fn style_for_theme(mut style: Style, theme: Theme) -> Style {
+    if theme == Theme::Dark {
+        return style;
+    }
+
+    if style.dimmed {
+        style.fg = LIGHT_BLACK;
+        style.dimmed = false;
+    }
+    if style.inverted && style.fg == YELLOW && style.bg == DEFAULT {
+        style.fg = DEFAULT;
+        style.bg = YELLOW;
+        style.inverted = false;
+    }
+    style
+}
+
+// Light palette: nearest xterm-256 colors to GitHub Primer light-mode tokens
+// (ANSI colors; yellow uses the attention color since ANSI yellow is near black).
+// Background colors: YELLOW is the search match background; BLUE and
+// LIGHT_BLACK are text colors in inverted styles (focused key, status bar).
 fn color_for_theme(color: Color, theme: Theme, foreground: bool) -> Color {
     if theme == Theme::Dark {
         return color;
     }
 
     match (foreground, color) {
-        (true, Color::C16(1)) => Color::C16(124),
-        (true, Color::C16(2)) => Color::C16(28),
-        (true, Color::C16(3)) => Color::C16(136),
-        (true, Color::C16(4 | 12)) => Color::C16(25),
-        (true, Color::C16(5)) => Color::C16(90),
-        (true, Color::C16(7)) => Color::C16(16),
-        (true, Color::C16(8)) => Color::C16(240),
-        (false, Color::C16(4)) => Color::C16(117),
-        (false, Color::C16(8)) => Color::C16(244),
+        (true, RED) => Color::C16(160),              // #cf222e
+        (true, GREEN) => Color::C16(22),             // #116329
+        (true, YELLOW) => Color::C16(94),            // #9a6700
+        (true, BLUE | LIGHT_BLUE) => Color::C16(26), // #0969da
+        (true, MAGENTA) => Color::C16(98),           // #8250df
+        (true, WHITE) => DEFAULT,
+        (true, LIGHT_BLACK) => Color::C16(241), // #59636e
+        (false, YELLOW) => Color::C16(222),
+        (false, BLUE) => Color::C16(117),
+        (false, LIGHT_BLACK) => Color::C16(248),
         (_, color) => color,
     }
 }
@@ -392,16 +418,53 @@ fn theme_from_colorfgbg(colorfgbg: &str) -> Option<Theme> {
 #[cfg(test)]
 mod theme_tests {
     use super::{AnsiTerminal, BLUE, GREEN, Terminal, Theme};
+    use crate::highlighting::{DIMMED_STYLE, SEARCH_MATCH_HIGHLIGHTED};
+
+    fn light_terminal() -> AnsiTerminal {
+        let mut terminal = AnsiTerminal::new(String::new());
+        terminal.set_theme(Theme::Light);
+        terminal
+    }
 
     #[test]
     fn light_theme_maps_semantic_colors_to_light_palette() {
-        let mut terminal = AnsiTerminal::new(String::new());
-        terminal.set_theme(Theme::Light);
+        let mut terminal = light_terminal();
 
         terminal.set_fg(GREEN).unwrap();
         terminal.set_bg(BLUE).unwrap();
 
-        assert_eq!(terminal.output, "\x1b[38;5;28m\x1b[48;5;117m");
+        assert_eq!(terminal.output, "\x1b[38;5;22m\x1b[48;5;117m");
+    }
+
+    #[test]
+    fn light_theme_renders_dimmed_text_in_gray_instead_of_faint() {
+        let mut terminal = light_terminal();
+
+        terminal.set_style(&DIMMED_STYLE).unwrap();
+
+        assert!(!terminal.output.contains("\x1b[2m"));
+        assert!(terminal.output.contains("\x1b[38;5;"));
+    }
+
+    #[test]
+    fn light_theme_renders_search_matches_on_light_background() {
+        let mut terminal = light_terminal();
+
+        terminal.set_style(&SEARCH_MATCH_HIGHLIGHTED).unwrap();
+
+        assert!(!terminal.output.contains("\x1b[7m"));
+        assert!(terminal.output.contains("\x1b[48;5;"));
+    }
+
+    #[test]
+    fn dark_theme_keeps_dimmed_and_inverted_styles() {
+        let mut terminal = AnsiTerminal::new(String::new());
+
+        terminal.set_style(&DIMMED_STYLE).unwrap();
+        terminal.set_style(&SEARCH_MATCH_HIGHLIGHTED).unwrap();
+
+        assert!(terminal.output.contains("\x1b[2m"));
+        assert!(terminal.output.contains("\x1b[7m"));
     }
 
     #[test]
