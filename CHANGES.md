@@ -3,4 +3,5 @@
 Changes with respect to upstream JLess:
 - OSC 52 clipboard,
 - selectable light and dark themes,
-- wrapping of long values.
+- wrapping of long values,
+- ctrl-arrow shortcuts for scrolling (↑/↓) and deep collapse/expand (←/→).
