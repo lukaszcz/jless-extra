@@ -1,3 +1,5 @@
+[JLess Extra](https://github.com/lukaszcz/jless-extra) is a fork of [JLess](https://jless.io) with extra features and bespoke modifications. See [CHANGES.md](CHANGES.md) for changes with respect to upstream JLess.
+
 ![jless logo and mascot](https://raw.githubusercontent.com/PaulJuliusMartinez/jless/master/logo/text-logo-with-mascot.svg)
 
 [`jless`](https://jless.io) is a command-line JSON viewer. Use it as a
