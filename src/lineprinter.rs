@@ -5,8 +5,10 @@ use std::iter::Peekable;
 use std::ops::Range;
 
 use regex::Regex;
+use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
 
-use crate::flatjson::{FlatJson, OptionIndex, Row, Value};
+use crate::flatjson::{FlatJson, Index, OptionIndex, Row, Value};
 use crate::highlighting;
 use crate::search::MatchRangeIter;
 use crate::terminal;
@@ -56,10 +58,19 @@ use crate::viewer::Mode;
 // off-by-one errors.
 //
 //
-// Naturally, there may be cases where an entire line does not fit
-// on the screen without wrapping. Rather than implement line
-// wrapping (which seems difficult), we truncate values and show
-// ellipses to indicate truncated content. When printing out multiple
+// When wrapping is enabled, a primitive value that does not fit
+// continues on further screen lines, separated by '\n' in the output.
+// Continuation lines are indented to the start of the value, or to
+// the start of the label if the value starts past the middle of the
+// screen, and every wrapped line ends with WRAP_INDICATOR in the last
+// column:
+//
+//     key: "long text that ↩|
+//          continues here"  |
+//
+// Otherwise, and for anything but primitive values, lines are not
+// wrapped; we truncate values and show ellipses to indicate
+// truncated content. When printing out multiple
 // values, such as the key and value of an Object entry, the index
 // and element of an array, or the many container elements in an
 // object preview, we fill in the available space from left to right
@@ -86,6 +97,14 @@ const COLLAPSED_CONTAINER: &str = "▷ ";
 const EXPANDED_CONTAINER: &str = "▽ ";
 const INDICATOR_WIDTH: isize = 2;
 const NO_FOCUSED_MATCH: Range<usize> = 0..0;
+const TAB_SIZE: isize = 2;
+const WRAP_INDICATOR: char = '↩';
+const WRAP_INDICATOR_STYLE: Style = Style {
+    fg: terminal::LIGHT_BLACK,
+    ..Style::default()
+};
+// Values are truncated instead of wrapped when continuation lines would be narrower.
+const MIN_WRAP_WIDTH: isize = 8;
 
 lazy_static::lazy_static! {
     pub static ref JS_IDENTIFIER: Regex = Regex::new("^[_$a-zA-Z][_$a-zA-Z0-9]*$").unwrap();
@@ -128,6 +147,25 @@ impl DelimiterPair {
     }
 }
 
+// Display settings that determine how rows are laid out on screen.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub struct LineLayout {
+    pub wrap: bool,
+    pub indentation_reduction: u16,
+    pub show_line_numbers: bool,
+    pub show_relative_line_numbers: bool,
+}
+
+impl LineLayout {
+    pub fn decrease_indentation_level(&mut self, max_depth: u16) {
+        self.indentation_reduction = self.indentation_reduction.saturating_add(1).min(max_depth);
+    }
+
+    pub fn increase_indentation_level(&mut self) {
+        self.indentation_reduction = self.indentation_reduction.saturating_sub(1)
+    }
+}
+
 // What line number should be displayed
 #[derive(Copy, Clone)]
 pub struct LineNumber {
@@ -166,10 +204,70 @@ pub struct LinePrinter<'a, 'b> {
 
     // For remembering horizontal scroll positions of long lines.
     pub cached_truncated_value: Option<Entry<'a, usize, TruncatedStrView>>,
+
+    // Whether long primitive values wrap onto further lines.
+    pub wrap: bool,
 }
 
 impl<'a, 'b> LinePrinter<'a, 'b> {
-    pub fn print_line(&mut self) -> fmt::Result {
+    // An unfocused printer for a row, without search matches or scroll state.
+    pub fn for_row(
+        terminal: &'a mut dyn Terminal,
+        flatjson: &'a FlatJson,
+        index: Index,
+        mode: Mode,
+        layout: &LineLayout,
+        width: u16,
+    ) -> Self {
+        let row = &flatjson[index];
+        let indentation_level =
+            row.depth
+                .saturating_sub(layout.indentation_reduction as usize) as isize;
+
+        let mut trailing_comma = false;
+        if mode == Mode::Line {
+            // The next_sibling field isn't set for CloseContainer rows, so
+            // we need to get the OpenContainer row before we check if a row
+            // is the last row in a container, and thus whether we should
+            // print a trailing comma or not.
+            let row_root = if row.is_closing_of_container() {
+                &flatjson[row.pair_index().unwrap()]
+            } else {
+                row
+            };
+
+            // Don't print trailing commas after top level elements, or after
+            // { or [ (but do after the } or ] of a collapsed container).
+            trailing_comma = row_root.parent.is_some()
+                && row_root.next_sibling.is_some()
+                && !(row.is_opening_of_container() && row.is_expanded());
+        }
+
+        LinePrinter {
+            mode,
+            terminal,
+            flatjson,
+            row,
+            line_number: LineNumber {
+                absolute: layout.show_line_numbers.then_some(index + 1),
+                relative: layout.show_relative_line_numbers.then_some(0),
+                max_width: isize::max(2, isize::ilog10(flatjson.0.len() as isize + 1) as isize + 1),
+            },
+            width: width as isize,
+            indentation: indentation_level * TAB_SIZE,
+            focused: false,
+            focused_because_matching_container_pair: false,
+            trailing_comma,
+            search_matches: None,
+            focused_search_match: &NO_FOCUSED_MATCH,
+            emphasize_focused_search_match: true,
+            cached_truncated_value: None,
+            wrap: layout.wrap,
+        }
+    }
+
+    // Prints the row and returns the number of screen lines it takes.
+    pub fn print_line(&mut self) -> Result<usize, fmt::Error> {
         self.terminal.reset_style()?;
 
         let mut available_space = self.width;
@@ -183,12 +281,15 @@ impl<'a, 'b> LinePrinter<'a, 'b> {
 
         if space_used_for_indicators == expected_space_used_for_indicators {
             available_space -= space_used_for_indicators;
+            let label_col = self.width - available_space;
 
             let space_used_for_label = self.fill_in_label(available_space)?;
             available_space -= space_used_for_label;
 
             if self.has_label() && space_used_for_label == 0 {
                 self.print_truncated_indicator()?;
+            } else if let Some(lines) = self.fill_in_wrapped_value(available_space, label_col)? {
+                return Ok(lines);
             } else {
                 let space_used_for_value = self.fill_in_value(available_space)?;
 
@@ -200,7 +301,7 @@ impl<'a, 'b> LinePrinter<'a, 'b> {
             self.print_truncated_indicator()?;
         }
 
-        Ok(())
+        Ok(1)
     }
 
     // Absolute | Relative | Focused | Format
@@ -296,11 +397,7 @@ impl<'a, 'b> LinePrinter<'a, 'b> {
     }
 
     fn print_n_spaces(&mut self, n: isize) -> fmt::Result {
-        for _ in 0..n {
-            write!(self.terminal, " ")?;
-        }
-
-        Ok(())
+        write!(self.terminal, "{:1$}", "", n.max(0) as usize)
     }
 
     fn print_container_indicator(&mut self) -> fmt::Result {
@@ -575,6 +672,89 @@ impl<'a, 'b> LinePrinter<'a, 'b> {
         }
 
         Ok(used_space)
+    }
+
+    // Prints a primitive value, wrapping it if it doesn't fit, and returns
+    // the number of lines used. Returns None without printing anything when
+    // not wrapping.
+    fn fill_in_wrapped_value(
+        &mut self,
+        available_space: isize,
+        label_col: isize,
+    ) -> Result<Option<usize>, fmt::Error> {
+        if !self.wrap || !self.row.is_primitive() {
+            return Ok(None);
+        }
+
+        let row_range = self.row.range.clone();
+        let quoted = self.row.is_string();
+        let quote = if quoted { "\"" } else { "" };
+        let value_range = if quoted {
+            row_range.start + 1..row_range.end - 1
+        } else {
+            row_range.clone()
+        };
+        let value_ref = &self.flatjson.1[value_range.clone()];
+
+        let value_col = self.width - available_space + quote.len() as isize;
+        let continuation_col = if value_col <= self.width / 2 {
+            value_col
+        } else {
+            label_col
+        };
+        let continuation_width = self.width - continuation_col - 1;
+        if continuation_width < MIN_WRAP_WIDTH {
+            return Ok(None);
+        }
+
+        let suffix_width = quote.len() as isize + self.trailing_comma as isize;
+        let pieces = wrap_ranges(
+            value_ref,
+            available_space - quote.len() as isize - 1,
+            continuation_width,
+            suffix_width,
+        );
+
+        let style = Style {
+            fg: Self::color_for_value_type(&self.row.value),
+            ..Style::default()
+        };
+        let styles = (&style, &highlighting::SEARCH_MATCH_HIGHLIGHTED);
+
+        self.highlight_str(quote, Some(row_range.start), styles)?;
+        for (i, piece) in pieces.iter().enumerate() {
+            if i > 0 {
+                self.print_line_break(continuation_col)?;
+            }
+            self.highlight_str(
+                &value_ref[piece.clone()],
+                Some(value_range.start + piece.start),
+                styles,
+            )?;
+        }
+        self.highlight_str(quote, Some(value_range.end), styles)?;
+
+        if self.trailing_comma {
+            self.highlight_str(
+                ",",
+                Some(row_range.end),
+                (
+                    &highlighting::DEFAULT_STYLE,
+                    &highlighting::SEARCH_MATCH_HIGHLIGHTED,
+                ),
+            )?;
+        }
+
+        Ok(Some(pieces.len()))
+    }
+
+    fn print_line_break(&mut self, continuation_col: isize) -> fmt::Result {
+        self.terminal.position_cursor_col(self.width as u16)?;
+        self.terminal.set_style(&WRAP_INDICATOR_STYLE)?;
+        self.terminal.write_char(WRAP_INDICATOR)?;
+        self.terminal.reset_style()?;
+        self.terminal.write_char('\n')?;
+        self.print_n_spaces(continuation_col)
     }
 
     // We use TruncatedStrViews to manage truncating values when they
@@ -1195,9 +1375,69 @@ impl<'a, 'b> LinePrinter<'a, 'b> {
     }
 }
 
+// Splits `s` into the byte ranges shown on consecutive screen lines. The
+// first line has `first_width` columns and the others `width` columns, plus
+// the column reserved for WRAP_INDICATOR, which the last line uses for text.
+// The last line also fits `suffix_width` columns of closing delimiters, and
+// holds at least one grapheme if a previous line exists.
+fn wrap_ranges(
+    s: &str,
+    first_width: isize,
+    width: isize,
+    suffix_width: isize,
+) -> Vec<Range<usize>> {
+    // ASCII characters are single column graphemes, so lines can be sliced directly.
+    let ascii = s.is_ascii();
+    let grapheme_width = |g: &str| UnicodeWidthStr::width(g) as isize;
+    let mut remaining_width = if ascii {
+        s.len() as isize
+    } else {
+        s.graphemes(true).map(grapheme_width).sum()
+    };
+
+    let mut ranges = vec![];
+    let mut start = 0;
+    let mut line_width = first_width;
+    loop {
+        if remaining_width + suffix_width <= line_width + 1 {
+            ranges.push(start..s.len());
+            return ranges;
+        }
+
+        // Fill the line, forcing progress on continuation lines.
+        let (mut end, mut used_width) = if ascii {
+            let n = (line_width.max(0) as usize).min(s.len() - start);
+            (start + n, n as isize)
+        } else {
+            let mut end = start;
+            let mut used_width = 0;
+            for g in s[start..].graphemes(true) {
+                let w = grapheme_width(g);
+                if used_width + w > line_width && (end > start || line_width < width) {
+                    break;
+                }
+                end += g.len();
+                used_width += w;
+            }
+            (end, used_width)
+        };
+
+        // Leave the last grapheme for the line with the closing delimiters.
+        if end == s.len() && end > start {
+            let last = s[start..end].graphemes(true).next_back().unwrap();
+            end -= last.len();
+            used_width -= grapheme_width(last);
+        }
+
+        ranges.push(start..end);
+        start = end;
+        remaining_width -= used_width;
+        line_width = width;
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use unicode_width::UnicodeWidthStr;
 
     use crate::flatjson::{parse_top_level_json, parse_top_level_yaml};
     use crate::terminal::test::{TextOnlyTerminal, VisibleEscapesTerminal};
@@ -1231,6 +1471,20 @@ mod tests {
             focused_search_match: &DUMMY_RANGE,
             emphasize_focused_search_match: true,
             cached_truncated_value: None,
+            wrap: false,
+        }
+    }
+
+    fn wrapping_line_printer<'a>(
+        terminal: &'a mut dyn Terminal,
+        flatjson: &'a FlatJson,
+        index: usize,
+        width: isize,
+    ) -> LinePrinter<'a, 'a> {
+        LinePrinter {
+            width,
+            wrap: true,
+            ..default_line_printer(terminal, flatjson, index)
         }
     }
 
@@ -1978,6 +2232,174 @@ mod tests {
         line.terminal.clear_output();
         let _ = line.generate_container_preview(&line.flatjson[0], 100, true, false)?;
         assert_eq!(expected, line.terminal.output());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_wrap_long_value_under_value_start() -> std::fmt::Result {
+        let fj =
+            parse_top_level_json(r#"{"key": "abcdefghijklmnopqrstuvwxyz"}"#.to_owned()).unwrap();
+        let mut term = TextOnlyTerminal::new();
+        let mut line = wrapping_line_printer(&mut term, &fj, 1, 20);
+
+        let lines = line.print_line()?;
+        assert_eq!(
+            [
+                r#"  key: "abcdefghijk↩"#,
+                r#"        lmnopqrstuv↩"#,
+                r#"        wxyz""#,
+            ]
+            .join("\n"),
+            line.terminal.output()
+        );
+        assert_eq!(3, lines);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_wrap_value_that_fits_is_printed_on_one_line() -> std::fmt::Result {
+        // Closing quote uses the last column, which only wrapped lines reserve for the indicator.
+        let fj = parse_top_level_json(r#"{"key": "abcdefghijk", "n": 123456789012345}"#.to_owned())
+            .unwrap();
+        let mut term = TextOnlyTerminal::new();
+        let mut line = wrapping_line_printer(&mut term, &fj, 1, 20);
+        assert_eq!(1, line.print_line()?);
+        assert_eq!(r#"  key: "abcdefghijk""#, line.terminal.output());
+
+        let mut term = TextOnlyTerminal::new();
+        let mut line = wrapping_line_printer(&mut term, &fj, 2, 20);
+        assert_eq!(1, line.print_line()?);
+        assert_eq!("  n: 123456789012345", line.terminal.output());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_wrap_under_label_when_value_starts_past_middle() -> std::fmt::Result {
+        let fj = parse_top_level_json(r#"{"long_key_1": "abcdefghijklmnopqrstuvwxyz"}"#.to_owned())
+            .unwrap();
+        let mut term = TextOnlyTerminal::new();
+        let mut line = wrapping_line_printer(&mut term, &fj, 1, 20);
+
+        assert_eq!(3, line.print_line()?);
+        assert_eq!(
+            [
+                r#"  long_key_1: "abcd↩"#,
+                r#"  efghijklmnopqrstu↩"#,
+                r#"  vwxyz""#,
+            ]
+            .join("\n"),
+            line.terminal.output()
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_wrap_keeps_last_character_with_closing_delimiters() -> std::fmt::Result {
+        let fj = parse_top_level_json(
+            r#"{"k": "abcdefghijklmnopqrstu", "l": "abcdefghijklmnopqrstuv", "m": 1}"#.to_owned(),
+        )
+        .unwrap();
+
+        let mut term = TextOnlyTerminal::new();
+        let mut line = LinePrinter {
+            mode: Mode::Line,
+            trailing_comma: true,
+            ..wrapping_line_printer(&mut term, &fj, 1, 20)
+        };
+        assert_eq!(2, line.print_line()?);
+        assert_eq!(
+            [r#"  "k": "abcdefghijk↩"#, r#"        lmnopqrstu","#].join("\n"),
+            line.terminal.output()
+        );
+
+        let mut term = TextOnlyTerminal::new();
+        let mut line = LinePrinter {
+            mode: Mode::Line,
+            trailing_comma: true,
+            ..wrapping_line_printer(&mut term, &fj, 2, 20)
+        };
+        assert_eq!(3, line.print_line()?);
+        assert_eq!(
+            [
+                r#"  "l": "abcdefghijk↩"#,
+                r#"        lmnopqrstu↩"#,
+                r#"        v","#,
+            ]
+            .join("\n"),
+            line.terminal.output()
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_wrap_wide_characters_and_indicator_position() -> std::fmt::Result {
+        let fj = parse_top_level_json(r#"{"k": "日本語のテキストです"}"#.to_owned()).unwrap();
+        let mut term = VisibleEscapesTerminal::new(true, false);
+        let mut line = wrapping_line_printer(&mut term, &fj, 1, 20);
+
+        // Value starts at column 7 ('  k: "'); first line fits 12 columns.
+        assert_eq!(2, line.print_line()?);
+        assert_eq!(
+            [r#"  k: "日本語のテキ_C(20)_↩"#, r#"      ストです""#,].join("\n"),
+            line.terminal.output()
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_wrap_highlights_match_across_line_break() -> std::fmt::Result {
+        let fj =
+            parse_top_level_json(r#"{"key": "abcdefghijklmnopqrstuvwxyz"}"#.to_owned()).unwrap();
+        let start = fj.1.find("jklm").unwrap();
+        let matches = [Range {
+            start,
+            end: start + 4,
+        }];
+        let mut term = VisibleEscapesTerminal::new(false, true);
+        let mut line = LinePrinter {
+            search_matches: Some(matches.iter().peekable()),
+            ..wrapping_line_printer(&mut term, &fj, 1, 20)
+        };
+
+        line.print_line()?;
+        let output = line.terminal.output();
+        let highlighted = |s: &str| output.contains(&format!("_INV_{s}"));
+        assert!(highlighted("jk"), "{output}");
+        assert!(highlighted("lm"), "{output}");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_wrap_containers_and_narrow_values_are_truncated() -> std::fmt::Result {
+        let fj = parse_top_level_json(
+            r#"{"a": {"b": "abcdefghijklmnopqrstuvwxyz"}, "c": "abcdefghijklmnopqrstuvwxyz"}"#
+                .to_owned(),
+        )
+        .unwrap();
+
+        let mut term = TextOnlyTerminal::new();
+        let mut line = wrapping_line_printer(&mut term, &fj, 1, 20);
+        assert_eq!(1, line.print_line()?);
+        assert_eq!(
+            format!(r#"{EXPANDED_CONTAINER}a: (1) {{b: "abc…"}}"#),
+            line.terminal.output()
+        );
+
+        // Continuation lines would be narrower than MIN_WRAP_WIDTH.
+        let mut term = TextOnlyTerminal::new();
+        let mut line = LinePrinter {
+            indentation: 8,
+            ..wrapping_line_printer(&mut term, &fj, 4, 18)
+        };
+        assert_eq!(1, line.print_line()?);
+        assert_eq!(r#"          c: "ab…""#, line.terminal.output());
 
         Ok(())
     }

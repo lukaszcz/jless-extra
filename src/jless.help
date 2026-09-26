@@ -84,6 +84,7 @@
   ,         *  Scroll a truncated value one char to the left  (or [4mN[0m chars).
   ;            Scroll a truncated value all the way to the end, or, if
                  already at the end, back to the start.
+                 Values are only truncated when line wrapping is off.
 
   <            Decrease the indentation of every line by one (or [4mN[0m) tabs.
   >            Increase the indentation of every line by one (or [4mN[0m) tabs.
@@ -257,6 +258,23 @@
       currently focused line. When both flags are set, the absolute line
       number will be displayed next to the focused lines, and all other line
       numbers will be relative. This matches vim's behavior.
+
+                                 [1mLINE WRAPPING[0m
+
+      Long values are wrapped onto multiple lines by default, so they can
+      always be seen in full. A ↩ at the end of a line marks where a value
+      wraps. Scrolling commands move by screen lines, so values taller than
+      the screen can be scrolled through.
+
+      When wrapping is off, long values are truncated and can be scrolled
+      horizontally with '.', ',' and ';'.
+
+  --no-wrap         Truncate long values instead of wrapping them.
+  --wrap            Wrap long values (default).
+
+  :set wrap         Wrap long values.
+  :set nowrap       Truncate long values.
+  :set wrap!        Toggle whether long values are wrapped.
 
                                   [1mCOLOR THEMES[0m
 

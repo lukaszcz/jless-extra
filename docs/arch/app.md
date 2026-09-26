@@ -18,7 +18,7 @@ Each event is handled, then the screen is redrawn and the message cleared. Handl
 
 ## Side-Effecting Commands
 
-- **`:` commands** — parsed into a `Command`: quit, help, `set [no]number`/`[no]relativenumber`/`...!`, and `write`/`writesexp` (with `!` to overwrite).
+- **`:` commands** — parsed into a `Command`: quit, help, `set [no]number`/`[no]relativenumber`/`[no]wrap`/`...!`, and `write`/`writesexp` (with `!` to overwrite). Layout settings, including `<`/`>` indentation, reach the viewer as `Action::SetLayout`.
 - **Copy and print** — one content extractor (pretty or one-line value, unescaped string, key, dot/bracket/query path) feeds OSC 52 clipboard writes and printing to the main screen, where mouse button tracking is disabled so the user can select text.
 - **Help** — pipes the embedded `jless.help` to `less -r` on the main screen.
 - **Suspend** — Ctrl-Z restores the terminal, sends `SIGSTOP`, then restores the TUI and redraws.

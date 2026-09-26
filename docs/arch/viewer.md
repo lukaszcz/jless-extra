@@ -1,6 +1,6 @@
 # Viewer State and Navigation
 
-`JsonViewer` owns the `FlatJson`, the focused row, the top row of the window, the display mode, the scrolloff setting, and the viewport dimensions (excluding the status bar). It knows nothing about input or rendering.
+`JsonViewer` owns the `FlatJson`, the focused row, the top of the window (a row plus how many of its lines are scrolled off), the display mode, the line layout (`LineLayout`: wrapping, indentation reduction, line numbers), the scrolloff setting, and the viewport dimensions (excluding the status bar). It knows nothing about input; it uses `LinePrinter` only to measure row heights, which it caches per mode, layout, and width.
 
 ## Modes
 
@@ -11,16 +11,16 @@ Every movement and line count switches on the mode to choose `*_visible_row` or 
 
 ## Actions
 
-All state changes go through `perform_action(Action)`: line and sibling movement, depth-change jumps, parent/first/last/matching-pair focus, scrolling, half-page jumps, paging, jump-to-line, `z` repositioning, clicks, collapse/expand (single, siblings, deep), mode toggle, and resize. Count prefixes arrive as action arguments.
+All state changes go through `perform_action(Action)`: line and sibling movement, depth-change jumps, parent/first/last/matching-pair focus, scrolling, half-page jumps, paging, jump-to-line, `z` repositioning, clicks, collapse/expand (single, siblings, deep), mode toggle, layout changes, and resize. Count prefixes arrive as action arguments.
 
-After each action, one of three window policies applies, chosen per action:
+Focus moves by rows; the window moves by screen lines (`ScreenLine`), so scrolling can pass through a row taller than the screen. After each action, window policies apply, chosen per action:
 
-- **Track focus** — keep the focused row visible with scrolloff padding; a large jump re-centers the focused row about a third of the way down.
-- **Pin screen position** — keep the focused line at the same screen row (mode toggle, sibling collapse/expand).
+- **Track focus** — keep the whole focused row visible with scrolloff padding, or its start if it is taller than the screen; a large jump re-centers the focused row about a third of the way down.
+- **Pin screen position** — keep the focused row's first line at the same screen line (mode toggle, sibling collapse/expand, layout changes, which then also track focus).
 - **Action-managed** — scrolling and jumps set the window themselves.
 
 Sibling movement remembers a desired depth across consecutive presses so it can climb out and return to the original depth; most other actions reset it.
 
 ## Code Entry Points
 
-- `src/viewer.rs` — `JsonViewer`, `Mode`, `Action`, `perform_action`, window tracking (`ensure_focused_row_is_visible`), and line counting helpers.
+- `src/viewer.rs` — `JsonViewer`, `Mode`, `Action`, `perform_action`, window tracking (`ensure_focused_row_is_visible`), row heights, and screen line helpers (`lines_before`, `lines_past`, `lines_between`).

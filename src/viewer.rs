@@ -1,6 +1,11 @@
+use std::cell::RefCell;
+use std::collections::HashMap;
+
 use clap::ValueEnum;
 
 use crate::flatjson::{FlatJson, Index, OptionIndex};
+use crate::lineprinter::{LineLayout, LinePrinter};
+use crate::terminal::NullTerminal;
 use crate::types::TTYDimensions;
 
 #[derive(PartialEq, Eq, Copy, Clone, Debug, ValueEnum)]
@@ -11,9 +16,26 @@ pub enum Mode {
 
 const DEFAULT_SCROLLOFF: u16 = 3;
 
+// Measured row heights, valid for the mode, layout and width in `key`.
+#[derive(Default)]
+struct RowHeights {
+    key: Option<(Mode, LineLayout, u16)>,
+    heights: HashMap<Index, usize>,
+}
+
+// A screen line of a row: rows take several lines when wrapped. Orders by
+// position in the file.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct ScreenLine {
+    row: Index,
+    line: usize,
+}
+
 pub struct JsonViewer {
     pub flatjson: FlatJson,
     pub top_row: Index,
+    // Lines of top_row scrolled above the window.
+    pub top_row_offset: usize,
     pub focused_row: Index,
 
     // Used for Focus{Prev,Next}Sibling actions.
@@ -30,6 +52,8 @@ pub struct JsonViewer {
     // Access the functional value via .scrolloff().
     pub scrolloff_setting: u16,
     pub mode: Mode,
+    pub layout: LineLayout,
+    row_heights: RefCell<RowHeights>,
 }
 
 impl JsonViewer {
@@ -37,12 +61,15 @@ impl JsonViewer {
         JsonViewer {
             flatjson,
             top_row: 0,
+            top_row_offset: 0,
             focused_row: 0,
             desired_depth: 0,
             jump_distance: None,
             dimensions: TTYDimensions::default(),
             scrolloff_setting: DEFAULT_SCROLLOFF,
             mode,
+            layout: LineLayout::default(),
+            row_heights: RefCell::default(),
         }
     }
 }
@@ -134,6 +161,8 @@ pub enum Action {
 
     ToggleMode,
 
+    SetLayout(LineLayout),
+
     ResizeViewerDimensions(TTYDimensions),
 }
 
@@ -183,6 +212,7 @@ impl JsonViewer {
             Action::ExpandNodeAndSiblings => self.expand_node_and_siblings(),
             Action::DeepExpandNodeAndSiblings => self.deep_expand_node_and_siblings(),
             Action::ToggleMode => self.toggle_mode(),
+            Action::SetLayout(layout) => self.layout = layout,
             Action::ResizeViewerDimensions(dims) => self.dimensions = dims,
         }
 
@@ -190,12 +220,15 @@ impl JsonViewer {
             self.desired_depth = self.flatjson[self.focused_row].depth;
         }
 
+        if let Some(screen_index) = prev_index_of_focused_row {
+            // Keep focused line in same place on the screen.
+            self.set_top(
+                self.lines_before(self.first_line(self.focused_row), screen_index as usize),
+            );
+        }
+
         if track_window {
             self.ensure_focused_row_is_visible();
-        } else if let Some(screen_index) = prev_index_of_focused_row {
-            // Keep focused line in same place on the screen.
-            self.top_row =
-                self.count_n_lines_before(self.focused_row, screen_index as usize, self.mode);
         }
     }
 
@@ -232,6 +265,7 @@ impl JsonViewer {
             Action::ExpandNodeAndSiblings => false,
             Action::DeepExpandNodeAndSiblings => false,
             Action::ToggleMode => false,
+            Action::SetLayout(_) => true,
             Action::ResizeViewerDimensions(_) => true,
             _ => false,
         }
@@ -249,6 +283,7 @@ impl JsonViewer {
                 | Action::MoveFocusedLineToCenter
                 | Action::MoveFocusedLineToBottom
                 | Action::ToggleMode
+                | Action::SetLayout(_)
                 | Action::ResizeViewerDimensions(_)
         )
     }
@@ -256,6 +291,7 @@ impl JsonViewer {
     fn should_keep_focused_row_at_same_screen_index(&self, action: &Action) -> Option<u16> {
         match action {
             Action::ToggleMode
+            | Action::SetLayout(_)
             | Action::CollapseNodeAndSiblings
             | Action::DeepCollapseNodeAndSiblings
             | Action::ExpandNodeAndSiblings
@@ -268,10 +304,7 @@ impl JsonViewer {
         let mut row = self.focused_row;
 
         for _ in 0..rows {
-            let prev_row = match self.mode {
-                Mode::Line => self.flatjson.prev_visible_row(row),
-                Mode::Data => self.flatjson.prev_item(row),
-            };
+            let prev_row = self.prev_row(row);
 
             match prev_row {
                 OptionIndex::Nil => break,
@@ -288,10 +321,7 @@ impl JsonViewer {
         let mut row = self.focused_row;
 
         for _ in 0..rows {
-            let next_row = match self.mode {
-                Mode::Line => self.flatjson.next_visible_row(row),
-                Mode::Data => self.flatjson.next_item(row),
-            };
+            let next_row = self.next_row(row);
 
             match next_row {
                 OptionIndex::Nil => break,
@@ -349,10 +379,7 @@ impl JsonViewer {
         let mut moved_yet = false;
 
         loop {
-            let prev_row = match self.mode {
-                Mode::Line => self.flatjson.prev_visible_row(row),
-                Mode::Data => self.flatjson.prev_item(row),
-            };
+            let prev_row = self.prev_row(row);
 
             match prev_row {
                 OptionIndex::Nil => break,
@@ -400,10 +427,7 @@ impl JsonViewer {
         let mut moved_yet = false;
 
         loop {
-            let next_row = match self.mode {
-                Mode::Line => self.flatjson.next_visible_row(row),
-                Mode::Data => self.flatjson.next_item(row),
-            };
+            let next_row = self.next_row(row);
 
             match next_row {
                 OptionIndex::Nil => break,
@@ -509,15 +533,12 @@ impl JsonViewer {
     }
 
     fn focus_top(&mut self) {
-        self.top_row = 0;
+        self.set_top(self.first_line(0));
         self.focused_row = 0;
     }
 
     fn focus_bottom(&mut self) {
-        self.focused_row = match self.mode {
-            Mode::Line => self.flatjson.last_visible_index(),
-            Mode::Data => self.flatjson.last_visible_item(),
-        };
+        self.focused_row = self.last_row();
     }
 
     fn focus_matching_pair(&mut self) {
@@ -538,23 +559,23 @@ impl JsonViewer {
         }
     }
 
-    fn scroll_up(&mut self, rows: usize) {
-        self.top_row = self.count_n_lines_before(self.top_row, rows, self.mode);
-        let max_focused_row = self.count_n_lines_past(
-            self.top_row,
-            (self.dimensions.height - self.scrolloff() - 1) as usize,
-            self.mode,
-        );
+    fn scroll_up(&mut self, lines: usize) {
+        self.set_top(self.lines_before(self.top(), lines));
+        let max_focused_row = self
+            .lines_past(
+                self.top(),
+                (self.dimensions.height - self.scrolloff() - 1) as usize,
+            )
+            .row;
 
         if self.focused_row > max_focused_row {
             self.focused_row = max_focused_row;
         }
     }
 
-    fn scroll_down(&mut self, rows: usize) {
-        self.top_row = self.count_n_lines_past(self.top_row, rows, self.mode);
-        let first_focusable_row =
-            self.count_n_lines_past(self.top_row, self.scrolloff() as usize, self.mode);
+    fn scroll_down(&mut self, lines: usize) {
+        self.set_top(self.lines_past(self.top(), lines));
+        let first_focusable_row = self.lines_past(self.top(), self.scrolloff() as usize).row;
 
         if self.focused_row < first_focusable_row {
             self.focused_row = first_focusable_row;
@@ -564,59 +585,55 @@ impl JsonViewer {
     fn jump_up(&mut self, distance: Option<usize>) {
         let lines = self.determine_jump_distance(distance);
 
-        let original_top_row = self.top_row;
+        let original_top = self.top();
         let num_visible_before_focused = self.index_of_focused_row_on_screen();
 
-        self.top_row = self.count_n_lines_before(self.top_row, lines, self.mode);
+        self.set_top(self.lines_before(original_top, lines));
 
         // If the viewing window moved at all, then keep the focused line in the
         // same place vertically. But if we're at the top of the file, then move
         // the focused line by the expected amount. This prevents the viewing
         // window and the focused line from both changing, but by different amounts.
-        if original_top_row != self.top_row {
-            self.focused_row = self.count_n_lines_past(
-                self.top_row,
-                num_visible_before_focused as usize,
-                self.mode,
-            );
+        if original_top != self.top() {
+            self.focused_row = self
+                .lines_past(self.top(), num_visible_before_focused as usize)
+                .row;
         } else {
-            self.focused_row = self.count_n_lines_before(self.focused_row, lines, self.mode);
+            self.focused_row = self
+                .lines_before(self.first_line(self.focused_row), lines)
+                .row;
         }
     }
 
     fn jump_down(&mut self, distance: Option<usize>) {
         let lines = self.determine_jump_distance(distance);
 
-        let original_top_row = self.top_row;
+        let original_top = self.top();
         let num_visible_before_focused = self.index_of_focused_row_on_screen();
 
-        self.top_row = self.count_n_lines_past(self.top_row, lines, self.mode);
+        self.set_top(self.lines_past(original_top, lines));
 
-        let last_line = match self.mode {
-            Mode::Line => self.flatjson.last_visible_index(),
-            Mode::Data => self.flatjson.last_visible_item(),
-        };
-        let top_row_if_last_row_is_at_bottom =
-            self.count_n_lines_before(last_line, self.dimensions.height as usize - 1, self.mode);
+        let top_if_last_line_is_at_bottom = self.lines_before(
+            self.last_line(self.last_row()),
+            self.dimensions.height as usize - 1,
+        );
 
         // When jumping, we won't show lines past EOF, unless we already
         // are showing lines past EOF.
-        if self.top_row > top_row_if_last_row_is_at_bottom {
-            self.top_row = top_row_if_last_row_is_at_bottom.max(original_top_row);
+        if self.top() > top_if_last_line_is_at_bottom {
+            self.set_top(top_if_last_line_is_at_bottom.max(original_top));
         }
 
         // If the viewing window moved at all, then keep the focused line in the
         // same place vertically. But if we're at the bottom of the file, then move
         // the focused line by the expected amount. This prevents the viewing
         // window and the focused line from both changing, but by different amounts.
-        if original_top_row != self.top_row {
-            self.focused_row = self.count_n_lines_past(
-                self.top_row,
-                num_visible_before_focused as usize,
-                self.mode,
-            );
+        if original_top != self.top() {
+            self.focused_row = self
+                .lines_past(self.top(), num_visible_before_focused as usize)
+                .row;
         } else {
-            self.focused_row = self.count_n_lines_past(self.focused_row, lines, self.mode);
+            self.focused_row = self.lines_past(self.last_line(self.focused_row), lines).row;
         }
     }
 
@@ -674,21 +691,25 @@ impl JsonViewer {
 
     fn move_focused_line_to_top(&mut self) {
         let padding = self.scrolloff() as usize;
-        self.top_row = self.count_n_lines_before(self.focused_row, padding, self.mode);
+        self.set_top(self.lines_before(self.first_line(self.focused_row), padding));
     }
 
     fn move_focused_line_to_center(&mut self) {
         let padding = (self.dimensions.height / 2) as usize;
-        self.top_row = self.count_n_lines_before(self.focused_row, padding, self.mode);
+        self.set_top(self.lines_before(self.first_line(self.focused_row), padding));
     }
 
     fn move_focused_line_to_bottom(&mut self) {
         let padding = (self.dimensions.height - self.scrolloff() - 1) as usize;
-        self.top_row = self.count_n_lines_before(self.focused_row, padding, self.mode);
+        // Keep the start of a row taller than the screen visible.
+        let top = self
+            .lines_before(self.last_line(self.focused_row), padding)
+            .min(self.first_line(self.focused_row));
+        self.set_top(top);
     }
 
     fn click_row(&mut self, row: u16) {
-        self.focused_row = self.count_n_lines_past(self.top_row, (row - 1) as usize, self.mode);
+        self.focused_row = self.lines_past(self.top(), (row - 1) as usize).row;
         if self.flatjson[self.focused_row].is_opening_of_container() {
             self.toggle_collapsed();
         }
@@ -827,7 +848,7 @@ impl JsonViewer {
         //   15        8              7             7
         //   16        8              7             8
         let scrolloff = self.scrolloff();
-        // Max padding is max number of rows that can be visible between the focused
+        // Max padding is max number of lines that can be visible between the focused
         // row and the top or bottom of the screen.
         let max_padding = self.dimensions.height - scrolloff - 1;
 
@@ -863,20 +884,26 @@ impl JsonViewer {
         // we don't recenter the focused line when moving far up in the file.
         let recenter_distance = self.dimensions.height + (self.dimensions.height / 3);
 
-        // Note that this will return 0 if focused_row < top_row.
-        let num_visible_before_focused = self.count_visible_rows_before(
-            self.top_row,
-            self.focused_row,
+        let top = self.top();
+        let focused_start = self.first_line(self.focused_row);
+        let focused_end = self.last_line(self.focused_row);
+        // Top of a focused row taller than the screen, with scrolloff padding.
+        let top_showing_focused_start = self.lines_before(focused_start, scrolloff as usize);
+
+        // Note that this will return 0 if focused_start < top.
+        let num_visible_before_focused = self.lines_between(
+            top,
+            focused_start,
             // Add 1 so we can differentiate between == recenter_distance and > recenter_distance
-            recenter_distance + 1,
-            self.mode,
+            recenter_distance as usize + 1,
         );
 
         // Handle focused line too close to or past the top of the screen.
-        if self.focused_row < self.top_row || num_visible_before_focused < scrolloff {
-            self.top_row =
-                self.count_n_lines_before(self.focused_row, scrolloff as usize, self.mode);
-        } else if num_visible_before_focused > max_padding {
+        if focused_start < top || num_visible_before_focused < scrolloff as usize {
+            self.set_top(top_showing_focused_start);
+        } else if self.lines_between(top, focused_end, max_padding as usize + 1)
+            > max_padding as usize
+        {
             // Handle focused line too close to or past the bottom of the screen.
 
             // If the user moved well past the bottom of the screen, we will refocus
@@ -884,38 +911,33 @@ impl JsonViewer {
             // the screen.
             //
             // Note this is padding from the _bottom_ of the screen.
-            let refocus_padding = if num_visible_before_focused > recenter_distance {
+            let refocus_padding = if num_visible_before_focused > recenter_distance as usize {
                 let bottom_padding = self.dimensions.height * 2 / 3;
                 // Make sure to still obey scrolloff on the top if scrolloff > 1/3 of height.
                 bottom_padding.min(max_padding)
             } else {
                 scrolloff
-            };
+            } as usize;
 
             // We need to figure out where the last line is because we won't
             // show any empty lines past the end of the file (unless the
             // user explicitly scrolls past the end of the file).
             //
             // This overrides the scrolloff setting.
-            let last_line = match self.mode {
-                Mode::Line => self.flatjson.last_visible_index(),
-                Mode::Data => self.flatjson.last_visible_item(),
-            };
-            let lines_visible_before_eof = self.count_visible_rows_before(
-                self.focused_row,
-                last_line,
+            let lines_visible_before_eof = self.lines_between(
+                focused_end,
+                self.last_line(self.last_row()),
                 refocus_padding + 1,
-                self.mode,
             );
 
             // Clamp the refocus padding at the number of lines visible before EOF
             // so that we don't show anything past EOF.
             let bottom_padding = refocus_padding.min(lines_visible_before_eof);
-            self.top_row = self.count_n_lines_before(
-                self.focused_row,
-                (self.dimensions.height - bottom_padding - 1) as usize,
-                self.mode,
+            let top = self.lines_before(
+                focused_end,
+                self.dimensions.height as usize - bottom_padding - 1,
             );
+            self.set_top(top.min(top_showing_focused_start));
         }
     }
 
@@ -928,83 +950,172 @@ impl JsonViewer {
     //
     // In this second (much less likely) case, we'll set the top row to the opening
     // of the container (but then still make sure all of its parents are visible).
+    //
+    // Also keeps the top row offset within the top row, which may have gotten
+    // shorter.
     fn ensure_top_row_is_visible(&mut self) {
+        let mut top_row = self.top_row;
+
         // Check rare case that top row is closing of container that is now collapsed.
-        if self.flatjson[self.top_row].is_closing_of_container() {
-            let opening = self.flatjson[self.top_row].pair_index().unwrap();
+        if self.flatjson[top_row].is_closing_of_container() {
+            let opening = self.flatjson[top_row].pair_index().unwrap();
             if self.flatjson[opening].is_collapsed() {
-                self.top_row = opening;
+                top_row = opening;
             }
         }
 
         // Now make sure all ancestors are visible.
-        let mut ancestor = self.top_row;
+        let mut ancestor = top_row;
         while let OptionIndex::Index(ancestor_index) = self.flatjson[ancestor].parent {
             if self.flatjson[ancestor_index].is_collapsed() {
-                self.top_row = ancestor_index;
+                top_row = ancestor_index;
             }
 
             ancestor = ancestor_index;
         }
-    }
 
-    fn count_n_lines_before(&self, mut start: Index, mut lines: usize, mode: Mode) -> Index {
-        while lines != 0 && start != 0 {
-            start = match mode {
-                Mode::Line => self.flatjson.prev_visible_row(start).unwrap(),
-                Mode::Data => self.flatjson.prev_item(start).unwrap(),
-            };
-            lines -= 1;
+        if top_row != self.top_row {
+            self.set_top(self.first_line(top_row));
+        } else {
+            self.top_row_offset = self.top_row_offset.min(self.row_height(top_row) - 1);
         }
-        start
     }
 
-    fn count_n_lines_past(&self, mut start: Index, mut lines: usize, mode: Mode) -> Index {
-        while lines != 0 {
-            let next = match mode {
-                Mode::Line => self.flatjson.next_visible_row(start),
-                Mode::Data => self.flatjson.next_item(start),
-            };
-
-            match next {
-                OptionIndex::Nil => break,
-                OptionIndex::Index(n) => start = n,
-            };
-
-            lines -= 1;
+    // Number of screen lines a row takes.
+    fn row_height(&self, row: Index) -> usize {
+        if !self.layout.wrap || !self.flatjson[row].is_primitive() {
+            return 1;
         }
 
-        start
-    }
-
-    // Counts how many visible lines/items (depending on mode) there are between start and end.
-    //
-    // start is counted as visible, and end is not counted as visible.
-    //
-    // If start == end, we return 0.
-    //
-    // We won't count more than max lines past start. If we still haven't gotten to end,
-    // we'll return max.
-    fn count_visible_rows_before(&self, mut start: Index, end: Index, max: u16, mode: Mode) -> u16 {
-        let mut num_visible: u16 = 0;
-        while start < end && num_visible < max {
-            num_visible += 1;
-            start = match mode {
-                Mode::Line => self.flatjson.next_visible_row(start).unwrap(),
-                Mode::Data => self.flatjson.next_item(start).unwrap(),
-            };
+        let key = Some((self.mode, self.layout, self.dimensions.width));
+        let mut row_heights = self.row_heights.borrow_mut();
+        if row_heights.key != key {
+            row_heights.key = key;
+            row_heights.heights.clear();
         }
-        num_visible
+
+        *row_heights.heights.entry(row).or_insert_with(|| {
+            LinePrinter::for_row(
+                &mut NullTerminal,
+                &self.flatjson,
+                row,
+                self.mode,
+                &self.layout,
+                self.dimensions.width,
+            )
+            .print_line()
+            .unwrap_or(1)
+        })
     }
 
-    // Returns the index of the focused row within the actual viewing window.
-    pub fn index_of_focused_row_on_screen(&self) -> u16 {
-        self.count_visible_rows_before(
-            self.top_row,
-            self.focused_row,
-            self.dimensions.height,
-            self.mode,
-        )
+    fn prev_row(&self, row: Index) -> OptionIndex {
+        match self.mode {
+            Mode::Line => self.flatjson.prev_visible_row(row),
+            Mode::Data => self.flatjson.prev_item(row),
+        }
+    }
+
+    fn next_row(&self, row: Index) -> OptionIndex {
+        match self.mode {
+            Mode::Line => self.flatjson.next_visible_row(row),
+            Mode::Data => self.flatjson.next_item(row),
+        }
+    }
+
+    fn last_row(&self) -> Index {
+        match self.mode {
+            Mode::Line => self.flatjson.last_visible_index(),
+            Mode::Data => self.flatjson.last_visible_item(),
+        }
+    }
+
+    fn first_line(&self, row: Index) -> ScreenLine {
+        ScreenLine { row, line: 0 }
+    }
+
+    fn last_line(&self, row: Index) -> ScreenLine {
+        ScreenLine {
+            row,
+            line: self.row_height(row) - 1,
+        }
+    }
+
+    fn top(&self) -> ScreenLine {
+        ScreenLine {
+            row: self.top_row,
+            line: self.top_row_offset,
+        }
+    }
+
+    fn set_top(&mut self, top: ScreenLine) {
+        self.top_row = top.row;
+        self.top_row_offset = top.line;
+    }
+
+    // The line n lines before start, or the first line of the file.
+    fn lines_before(&self, mut start: ScreenLine, mut n: usize) -> ScreenLine {
+        loop {
+            if n <= start.line {
+                start.line -= n;
+                return start;
+            }
+            n -= start.line + 1;
+            match self.prev_row(start.row) {
+                OptionIndex::Nil => return self.first_line(start.row),
+                OptionIndex::Index(prev) => start = self.last_line(prev),
+            }
+        }
+    }
+
+    // The line n lines past start, or the last line of the file.
+    fn lines_past(&self, mut start: ScreenLine, mut n: usize) -> ScreenLine {
+        loop {
+            let height = self.row_height(start.row);
+            if start.line + n < height {
+                start.line += n;
+                return start;
+            }
+            n -= height - start.line;
+            match self.next_row(start.row) {
+                OptionIndex::Nil => return self.last_line(start.row),
+                OptionIndex::Index(next) => start = self.first_line(next),
+            }
+        }
+    }
+
+    // Counts the lines from start (inclusive) to end (exclusive), or 0 if
+    // end <= start. Stops counting at max.
+    fn lines_between(&self, mut start: ScreenLine, end: ScreenLine, max: usize) -> usize {
+        let mut num_lines = 0;
+        while start.row < end.row && num_lines < max {
+            num_lines += self.row_height(start.row) - start.line;
+            start = self.first_line(self.next_row(start.row).unwrap());
+        }
+        if start.row == end.row {
+            num_lines += end.line.saturating_sub(start.line);
+        }
+        num_lines.min(max)
+    }
+
+    // Counts how many visible rows/items (depending on mode) there are from the
+    // top row to the focused row.
+    pub fn rows_before_focused_row(&self) -> usize {
+        let mut row = self.top_row;
+        let mut num_rows = 0;
+        while row < self.focused_row {
+            num_rows += 1;
+            row = self.next_row(row).unwrap();
+        }
+        num_rows
+    }
+
+    // Returns the screen line of the focused row's first line within the window.
+    fn index_of_focused_row_on_screen(&self) -> u16 {
+        self.lines_between(
+            self.top(),
+            self.first_line(self.focused_row),
+            self.dimensions.height as usize,
+        ) as u16
     }
 }
 
@@ -2288,5 +2399,155 @@ mod tests {
                 i + 1
             );
         }
+    }
+
+    // In data mode at width 20, values wrap after 9 columns, so the 27
+    // character string (row 2) takes three lines and the 54 character string
+    // (row 5) takes six.
+    const WRAPPED_ARRAY: &str = r#"[
+        "a",
+        "abcdefghijklmnopqrstuvwxyz1",
+        "b",
+        "c",
+        "abcdefghijklmnopqrstuvwxyz1abcdefghijklmnopqrstuvwxyz1",
+        "d"
+    ]"#;
+
+    fn wrapping_viewer(height: u16, scrolloff: u16) -> JsonViewer {
+        let fj = parse_top_level_json(WRAPPED_ARRAY.to_owned()).unwrap();
+        let mut viewer = JsonViewer::new(fj, Mode::Data);
+        viewer.layout.wrap = true;
+        viewer.dimensions = TTYDimensions { width: 20, height };
+        viewer.scrolloff_setting = scrolloff;
+        viewer
+    }
+
+    fn assert_top(viewer: &JsonViewer, top_row: Index, top_row_offset: usize) {
+        assert_eq!(
+            (top_row, top_row_offset),
+            (viewer.top_row, viewer.top_row_offset),
+            "unexpected (top_row, top_row_offset)"
+        );
+    }
+
+    #[test]
+    fn test_row_heights_when_wrapping() {
+        let mut viewer = wrapping_viewer(10, 0);
+        let heights = |viewer: &JsonViewer| -> Vec<usize> {
+            (0..8).map(|row| viewer.row_height(row)).collect()
+        };
+        assert_eq!(vec![1, 1, 3, 1, 1, 6, 1, 1], heights(&viewer));
+
+        viewer.dimensions.width = 40;
+        assert_eq!(vec![1, 1, 1, 1, 1, 2, 1, 1], heights(&viewer));
+
+        viewer.layout.wrap = false;
+        assert!((0..8).all(|row| viewer.row_height(row) == 1));
+    }
+
+    #[test]
+    fn test_click_wrapped_row() {
+        let mut viewer = wrapping_viewer(10, 0);
+        // Screen lines: [, "a", 3 lines of row 2, "b", ...
+        assert_movements(
+            &mut viewer,
+            vec![
+                (Action::Click(4), 2),
+                (Action::Click(5), 2),
+                (Action::Click(6), 3),
+            ],
+        );
+    }
+
+    #[test]
+    fn test_focused_wrapped_row_is_fully_visible() {
+        let mut viewer = wrapping_viewer(4, 0);
+        viewer.perform_action(Action::MoveDown(1));
+        assert_top(&viewer, 0, 0);
+
+        // Row 2 ends on the fifth line, so the window moves down by one row.
+        viewer.perform_action(Action::MoveDown(1));
+        assert_eq!(2, viewer.focused_row);
+        assert_top(&viewer, 1, 0);
+
+        viewer.scrolloff_setting = 1;
+        viewer.perform_action(Action::MoveDown(1));
+        assert_eq!(3, viewer.focused_row);
+        assert_top(&viewer, 2, 1);
+
+        viewer.perform_action(Action::MoveUp(1));
+        assert_eq!(2, viewer.focused_row);
+        assert_top(&viewer, 1, 0);
+    }
+
+    #[test]
+    fn test_scroll_through_row_taller_than_screen() {
+        let mut viewer = wrapping_viewer(3, 0);
+        viewer.perform_action(Action::JumpTo {
+            line: 5,
+            make_visible: true,
+        });
+        assert_eq!(5, viewer.focused_row);
+        assert_top(&viewer, 5, 0);
+
+        // Focus stays on the row while any of it is visible.
+        viewer.perform_action(Action::ScrollDown(2));
+        assert_eq!(5, viewer.focused_row);
+        assert_top(&viewer, 5, 2);
+
+        viewer.perform_action(Action::ScrollDown(3));
+        assert_eq!(5, viewer.focused_row);
+        assert_top(&viewer, 5, 5);
+
+        viewer.perform_action(Action::ScrollDown(1));
+        assert_eq!(6, viewer.focused_row);
+        assert_top(&viewer, 6, 0);
+
+        viewer.perform_action(Action::ScrollUp(2));
+        assert_eq!(6, viewer.focused_row);
+        assert_top(&viewer, 5, 4);
+
+        // Moving back to the row shows its start.
+        viewer.perform_action(Action::MoveUp(1));
+        assert_top(&viewer, 5, 0);
+    }
+
+    #[test]
+    fn test_page_down_moves_by_screen_lines() {
+        let mut viewer = wrapping_viewer(4, 0);
+        viewer.perform_action(Action::PageDown(1));
+        assert_top(&viewer, 2, 2);
+        assert_eq!(2, viewer.focused_row);
+
+        // Row 2 still starts on screen, so it stays focused.
+        viewer.perform_action(Action::PageUp(1));
+        assert_top(&viewer, 0, 0);
+        assert_eq!(2, viewer.focused_row);
+
+        viewer.perform_action(Action::PageDown(2));
+        assert_top(&viewer, 5, 1);
+        assert_eq!(5, viewer.focused_row);
+    }
+
+    #[test]
+    fn test_set_layout_keeps_focused_row_in_place() {
+        let mut viewer = wrapping_viewer(10, 0);
+        viewer.layout.wrap = false;
+        viewer.focused_row = 4;
+
+        let mut layout = viewer.layout;
+        layout.wrap = true;
+        viewer.perform_action(Action::SetLayout(layout));
+        assert_eq!(4, viewer.focused_row);
+        assert_top(&viewer, 2, 0);
+
+        // Offset into a row that no longer wraps is dropped.
+        viewer.perform_action(Action::ScrollDown(1));
+        viewer.perform_action(Action::ScrollDown(1));
+        assert_top(&viewer, 2, 2);
+        viewer.focused_row = 2;
+        layout.wrap = false;
+        viewer.perform_action(Action::SetLayout(layout));
+        assert_top(&viewer, 2, 0);
     }
 }

@@ -76,6 +76,16 @@ pub struct Opt {
     #[arg(short = 'R', long = "no-relative-line-numbers")]
     _show_relative_line_numbers_hidden: bool,
 
+    /// Don't wrap long values; truncate them instead. Truncated values can
+    /// be scrolled horizontally.
+    #[arg(long = "no-wrap", action = ArgAction::SetFalse)]
+    pub wrap: bool,
+
+    /// Wrap long values onto multiple lines (default), so they can always
+    /// be seen in full.
+    #[arg(long = "wrap", overrides_with = "wrap")]
+    pub _wrap_hidden: bool,
+
     /// Number of lines to maintain as padding between the currently
     /// focused row and the top or bottom of the screen. Setting this to
     /// a large value will keep the focused in the middle of the screen
@@ -121,6 +131,18 @@ mod tests {
         ] {
             let options = Opt::try_parse_from(["jless", "--theme", value]).unwrap();
             assert_eq!(options.theme, expected);
+        }
+    }
+
+    #[test]
+    fn wrap_is_default_and_can_be_disabled() {
+        for (args, expected) in [
+            (vec!["jless"], true),
+            (vec!["jless", "--no-wrap"], false),
+            (vec!["jless", "--no-wrap", "--wrap"], true),
+        ] {
+            let options = Opt::try_parse_from(&args).unwrap();
+            assert_eq!(options.wrap, expected, "{args:?}");
         }
     }
 

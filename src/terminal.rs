@@ -91,6 +91,33 @@ pub trait Terminal: Write {
     fn clear_output(&mut self);
 }
 
+// Discards all output; used to measure what would be printed.
+pub struct NullTerminal;
+
+impl Write for NullTerminal {
+    fn write_str(&mut self, _s: &str) -> Result {
+        Ok(())
+    }
+}
+
+#[rustfmt::skip]
+impl Terminal for NullTerminal {
+    fn clear_line(&mut self) -> Result { Ok(()) }
+    fn position_cursor(&mut self, _col: u16, _row: u16) -> Result { Ok(()) }
+    fn position_cursor_col(&mut self, _col: u16) -> Result { Ok(()) }
+    fn set_style(&mut self, _style: &Style) -> Result { Ok(()) }
+    fn reset_style(&mut self) -> Result { Ok(()) }
+    fn set_fg(&mut self, _color: Color) -> Result { Ok(()) }
+    fn set_bg(&mut self, _color: Color) -> Result { Ok(()) }
+    fn set_inverted(&mut self, _inverted: bool) -> Result { Ok(()) }
+    fn set_bold(&mut self, _bold: bool) -> Result { Ok(()) }
+    fn set_dimmed(&mut self, _dimmed: bool) -> Result { Ok(()) }
+    #[cfg(test)]
+    fn output(&self) -> &str { "" }
+    #[cfg(test)]
+    fn clear_output(&mut self) {}
+}
+
 pub struct AnsiTerminal {
     pub output: String,
     pub style: Style,

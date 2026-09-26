@@ -9,7 +9,7 @@ Start here for the system shape, then read only the subsystem documents relevant
 - **Entry** — parses CLI options, reads the input file or stdin, picks the format (flag, else file extension, else JSON), and either pretty-prints (non-TTY stdout) or resolves the terminal theme, sets up the terminal, and starts the app.
 - **Data model** — `FlatJson`: the row array, a canonical single-line text that rows index into, and the maximum depth. Built by the JSON or YAML parser; every other layer reads it.
 - **Controller** — `App`: the event loop, multi-key input states and count prefixes, `:` commands, search, copy/print/write, help, and suspend.
-- **Viewer** — `JsonViewer`: focused row, window position, display mode, and collapse state, changed only through `Action`s.
+- **Viewer** — `JsonViewer`: focused row, window position, display mode, line layout, and collapse state, changed only through `Action`s.
 - **Rendering** — `ScreenWriter` draws the screen and status bar, delegating each row to `LinePrinter`, which uses truncation and highlighting helpers and writes to a buffered `Terminal`.
 - **Search** — `SearchState`: regex matches over the canonical text and navigation between them.
 
@@ -18,7 +18,8 @@ Start here for the system shape, then read only the subsystem documents relevant
 - **The tree is a flat array.** A non-empty container is two rows (open and close) that point at each other; parent, sibling, and child links are indices. Navigation is index walking, and collapsing sets a flag on both rows of a pair.
 - **One canonical text backs everything.** Parsers re-emit the input as single-line JSON while building rows, and rows store byte ranges into it. Rendering, copying, paths, and search all slice that string; the original input text and formatting are discarded.
 - **Modes are views, not data.** Line mode shows every visible row; data mode hides closing rows and quotes/commas. Both walk the same `FlatJson` with different step functions.
-- **App interprets; viewer transitions.** `App` maps events to `Action`s; `JsonViewer::perform_action` applies them and then restores window invariants. Display-only state (indentation reduction, per-row horizontal scroll, line-number toggles) lives in `ScreenWriter`, not the viewer.
+- **App interprets; viewer transitions.** `App` maps events to `Action`s; `JsonViewer::perform_action` applies them and then restores window invariants. Layout settings (wrapping, indentation reduction, line numbers) live in the viewer because they determine row heights; per-row horizontal scroll lives in `ScreenWriter`.
+- **Rows may span screen lines.** With wrapping on, long primitive values continue on further lines. The viewer tracks its window in screen lines, measuring rows by printing them to a discarding terminal, so the top row may be partially scrolled off.
 - **Full redraw per event.** Each event renders the whole screen into a string buffer and flushes it once; there is no diffing.
 - **Output goes through a `Terminal` trait**, so rendering is testable without a TTY.
 - **Optional functionality is a Cargo feature.** `sexp` gates S-expression output.

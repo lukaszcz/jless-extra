@@ -14,7 +14,7 @@ use crate::flatjson;
 use crate::input::TuiEvent;
 use crate::input::TuiEvent::{KeyEvent, MouseEvent, WinChEvent};
 use crate::jsonstringunescaper::{UnescapeError, safe_unescape_json_string};
-use crate::lineprinter::JS_IDENTIFIER;
+use crate::lineprinter::{JS_IDENTIFIER, LineLayout};
 use crate::options::{DataFormat, Opt};
 use crate::screenwriter::{MessageSeverity, ScreenWriter};
 use crate::search::{JumpDirection, SearchDirection, SearchState};
@@ -74,6 +74,7 @@ enum Command {
     Help,
     SetShowLineNumber(Option<bool>),
     SetShowRelativeLineNumber(Option<bool>),
+    SetWrap(Option<bool>),
     WriteFile {
         filename: String,
         overwrite_existing: bool,
@@ -124,14 +125,15 @@ impl App {
 
         let mut viewer = JsonViewer::new(flatjson, opt.mode);
         viewer.scrolloff_setting = opt.scrolloff;
+        viewer.layout = LineLayout {
+            wrap: opt.wrap,
+            indentation_reduction: 0,
+            show_line_numbers: opt.show_line_numbers,
+            show_relative_line_numbers: opt.show_relative_line_numbers,
+        };
 
-        let screen_writer = ScreenWriter::init(
-            opt,
-            stdout,
-            Editor::<()>::new(),
-            TTYDimensions::default(),
-            theme,
-        );
+        let screen_writer =
+            ScreenWriter::init(stdout, Editor::<()>::new(), TTYDimensions::default(), theme);
 
         Ok(App {
             viewer,
@@ -459,13 +461,14 @@ impl App {
                         Key::Char('%') => Some(Action::FocusMatchingPair),
                         Key::Char('m') => Some(Action::ToggleMode),
                         Key::Char('<') => {
-                            self.screen_writer
-                                .decrease_indentation_level(self.viewer.flatjson.2 as u16);
-                            None
+                            let mut layout = self.viewer.layout;
+                            layout.decrease_indentation_level(self.viewer.flatjson.2 as u16);
+                            Some(Action::SetLayout(layout))
                         }
                         Key::Char('>') => {
-                            self.screen_writer.increase_indentation_level();
-                            None
+                            let mut layout = self.viewer.layout;
+                            layout.increase_indentation_level();
+                            Some(Action::SetLayout(layout))
                         }
                         Key::Char(';') => {
                             self.screen_writer
@@ -473,23 +476,27 @@ impl App {
                             None
                         }
                         Key::Char(':') => {
+                            let mut action = None;
                             if let Some(command) = self.readline(":", "command") {
+                                let mut layout = self.viewer.layout;
+                                // Sets a flag, or toggles it if no value is given.
+                                let set = |flag: &mut bool, value: Option<bool>| {
+                                    *flag = value.unwrap_or(!*flag);
+                                };
                                 match Self::parse_command(&command) {
                                     Command::Quit => break,
                                     Command::Help => self.show_help(),
-                                    Command::SetShowLineNumber(Some(new_val)) => {
-                                        self.screen_writer.show_line_numbers = new_val
+                                    Command::SetShowLineNumber(value) => {
+                                        set(&mut layout.show_line_numbers, value);
+                                        action = Some(Action::SetLayout(layout));
                                     }
-                                    Command::SetShowLineNumber(None) => {
-                                        self.screen_writer.show_line_numbers =
-                                            !self.screen_writer.show_line_numbers
+                                    Command::SetShowRelativeLineNumber(value) => {
+                                        set(&mut layout.show_relative_line_numbers, value);
+                                        action = Some(Action::SetLayout(layout));
                                     }
-                                    Command::SetShowRelativeLineNumber(Some(new_val)) => {
-                                        self.screen_writer.show_relative_line_numbers = new_val
-                                    }
-                                    Command::SetShowRelativeLineNumber(None) => {
-                                        self.screen_writer.show_relative_line_numbers =
-                                            !self.screen_writer.show_relative_line_numbers
+                                    Command::SetWrap(value) => {
+                                        set(&mut layout.wrap, value);
+                                        action = Some(Action::SetLayout(layout));
                                     }
                                     Command::WriteFile {
                                         filename,
@@ -510,7 +517,7 @@ impl App {
                                 }
                             }
 
-                            None
+                            action
                         }
                         _ => {
                             eprint!("{BELL}\r");
@@ -756,6 +763,9 @@ impl App {
                 "relativenumber" => Command::SetShowRelativeLineNumber(Some(true)),
                 "relativenumber!" => Command::SetShowRelativeLineNumber(None),
                 "norelativenumber" => Command::SetShowRelativeLineNumber(Some(false)),
+                "wrap" => Command::SetWrap(Some(true)),
+                "wrap!" => Command::SetWrap(None),
+                "nowrap" => Command::SetWrap(Some(false)),
                 _ => Command::Unknown,
             },
             ["w" | "write", filename] => Command::WriteFile {
@@ -969,6 +979,25 @@ impl App {
                     },
                 }
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_set_wrap_commands() {
+        for (command, expected) in [
+            ("set wrap", Some(true)),
+            ("set nowrap", Some(false)),
+            ("set wrap!", None),
+        ] {
+            assert!(
+                matches!(App::parse_command(command), Command::SetWrap(value) if value == expected),
+                "{command}"
+            );
         }
     }
 }
