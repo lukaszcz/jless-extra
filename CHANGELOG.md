@@ -3,7 +3,7 @@ main
 
 Improvements:
 - `ctrl-↑` and `ctrl-↓` scroll up and down by one line, like `ctrl-y` and
-  `ctrl-e`; `ctrl-←` and `ctrl-→` deeply collapse and expand the focused
+  `ctrl-e`; `alt-←` and `alt-→` deeply collapse and expand the focused
   node and its siblings, like `C` and `E`.
 - Long values now wrap onto multiple lines, with `↩` marking each wrap, so
   they can always be seen in full. Scrolling moves by screen lines, and

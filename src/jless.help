@@ -5,7 +5,8 @@
 
        Commands marked with * may be preceded by a number, [4mN[0m, which will
        repeatedly perform a command the given number of times. A key
-       preceded by a caret indicates the Ctrl key; thus ^E is ctrl-E.
+       preceded by a caret indicates the Ctrl key; thus ^E is ctrl-E. A key
+       preceded by M- indicates the Alt key; thus M-LeftArrow is alt-LeftArrow.
 
        Commands requiring multiple key-presses may be cancelled with the
        Escape key.
@@ -58,10 +59,10 @@
                  count is given, focus that line number, expanding any of its
                  parent nodes if necessary.
 
-  c               Shallow collapse the focused node and all its siblings.
-  C  ^LeftArrow   Deeply  collapse the focused node and all its siblings.
-  e               Shallow expand   the focused node and all its siblings.
-  E  ^RightArrow  Deeply  expand   the focused node and all its siblings.
+  c                Shallow collapse the focused node and all its siblings.
+  C  M-LeftArrow   Deeply  collapse the focused node and all its siblings.
+  e                Shallow expand   the focused node and all its siblings.
+  E  M-RightArrow  Deeply  expand   the focused node and all its siblings.
 
   Space        Toggle the collapsed state of the currently focused node.
 
