@@ -260,14 +260,18 @@ impl Terminal for AnsiTerminal {
 
 // Light theme adjusts styles whose dark rendering relies on the terminal
 // palette: faint text is too pale on light backgrounds, so it renders as
-// normal text, and inverted yellow search matches would show light text on a
-// dark yellow box.
+// normal text; bold yellow (the current line number) would be paler than
+// that, so it renders as bold normal text; and inverted yellow search matches
+// would show light text on a dark yellow box.
 fn style_for_theme(mut style: Style, theme: Theme) -> Style {
     if theme == Theme::Dark {
         return style;
     }
 
     style.dimmed = false;
+    if style.bold && style.fg == YELLOW {
+        style.fg = DEFAULT;
+    }
     if style.inverted && style.fg == YELLOW && style.bg == DEFAULT {
         style.fg = DEFAULT;
         style.bg = YELLOW;
@@ -443,7 +447,7 @@ fn theme_from_colorfgbg(colorfgbg: &str) -> Option<Theme> {
 #[cfg(test)]
 mod theme_tests {
     use super::{AnsiTerminal, BLUE, GREEN, Terminal, Theme};
-    use crate::highlighting::{DIMMED_STYLE, SEARCH_MATCH_HIGHLIGHTED};
+    use crate::highlighting::{CURRENT_LINE_NUMBER, DIMMED_STYLE, SEARCH_MATCH_HIGHLIGHTED};
 
     fn light_terminal() -> AnsiTerminal {
         let mut terminal = AnsiTerminal::new(String::new());
@@ -468,6 +472,16 @@ mod theme_tests {
         terminal.set_style(&DIMMED_STYLE).unwrap();
 
         assert!(!terminal.output.contains("\x1b[2m"));
+        assert!(!terminal.output.contains("\x1b[38;5;"));
+    }
+
+    #[test]
+    fn light_theme_renders_current_line_number_as_bold_normal_text() {
+        let mut terminal = light_terminal();
+
+        terminal.set_style(&CURRENT_LINE_NUMBER).unwrap();
+
+        assert!(terminal.output.contains("\x1b[1m"));
         assert!(!terminal.output.contains("\x1b[38;5;"));
     }
 

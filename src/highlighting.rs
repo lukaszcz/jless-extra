@@ -66,10 +66,11 @@ use crate::truncatedstrview::TruncatedStrView;
 //
 //  ^ The "(N) " size prefix is Gray
 //
-//  Line Numbers   |     Dimmed      |     Yellow      |       X        |            X
+//  Line Numbers   |     Dimmed      |  Yellow + Bold  |       X        |            X
 //
 // Dimmed is faint in the dark theme and normal text in the light theme,
-// which also remaps colors (see `terminal::style_for_theme`).
+// which also renders Yellow + Bold as Bold and remaps colors (see
+// `terminal::style_for_theme`).
 
 pub const DEFAULT_STYLE: Style = Style::default();
 
@@ -103,6 +104,7 @@ pub const DIMMED_STYLE: Style = Style {
 
 pub const CURRENT_LINE_NUMBER: Style = Style {
     fg: terminal::YELLOW,
+    bold: true,
     ..Style::default()
 };
 

@@ -12,6 +12,7 @@ Improvements:
   (`:set wrap` and `:set wrap!` turn wrapping on or toggle it).
 - Add light and dark color themes, detected from the terminal by default and
   selectable with `--theme` or `JLESS_THEME`.
+- The current line number is now bold.
 - Clipboard copy commands now use OSC 52, so Linux builds no longer need
   X11 clipboard development libraries. OSC 52 must be supported and enabled
   by the terminal.
