@@ -41,26 +41,35 @@ use crate::truncatedstrview::TruncatedStrView;
 
 //      Thing      |  Default Style  |  Focused Style  |      Match     |  Focused/Current Match
 // ----------------+-----------------+-----------------+----------------+------------------------
-//      null       |      Gray       |        X        | Yellow/Default |        Inverted
-//     boolean     |     Yellow      |        X        | Yellow/Default |        Inverted
-//     number      |     Magenta     |        X        | Yellow/Default |        Inverted
-//     string      |      Green      |        X        | Yellow/Default |        Inverted
-//  empty obj/arr  |     Default     |        X        | Yellow/Default |        Inverted
+//      null       |      Gray       |        X        | Yellow/Default |     Inverted + Bold
+//     boolean     |     Yellow      |        X        | Yellow/Default |     Inverted + Bold
+//     number      |     Magenta     |        X        | Yellow/Default |     Inverted + Bold
+//     string      |      Green      |        X        | Yellow/Default |     Inverted + Bold
+//  empty obj/arr  |      White      |        X        | Yellow/Default |     Inverted + Bold
 //
 //  ^ Object values can't be focused
 //
-//   ": " and ","  |     Default     |     Default     | Yellow/Default |        Inverted
+//   ": " and ","  |     Default     |     Default     | Yellow/Default |     Inverted + Bold
 //
-//  Object Labels  |      Blue       |  Inverted/Blue  | Yellow/Default |        Inverted
+//  Object Labels  |      Blue       |  Inverted/Blue  | Yellow/Default |     Inverted + Bold
 //                                        + Bold
 //
-//   Array Labels  |      Gray       | Default + Bold  |       X        |            X
+//  ^ Matches in a focused label are Inverted + Bold
+//
+//   Array Labels  |     Dimmed      | Inverted + Bold |       X        |            X
 //
 //    Container    |     Default     |      Bold       | Yellow/Default |     Inverted + Bold
 //    Delimiters
 //
-//    Container    |      Gray       |     Default     | Inverted Gray  |        Inverted
+//    Container    |     Dimmed      |     Dimmed      | Inverted Gray  |      Inverted Gray
 //     Previews
+//
+//  ^ The "(N) " size prefix is Gray
+//
+//  Line Numbers   |     Dimmed      |     Yellow      |       X        |            X
+//
+// Dimmed is faint in the dark theme and normal text in the light theme,
+// which also remaps colors (see `terminal::style_for_theme`).
 
 pub const DEFAULT_STYLE: Style = Style::default();
 
