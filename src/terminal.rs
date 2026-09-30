@@ -259,17 +259,15 @@ impl Terminal for AnsiTerminal {
 }
 
 // Light theme adjusts styles whose dark rendering relies on the terminal
-// palette: faint text is too pale on light backgrounds, and inverted yellow
-// search matches would show light text on a dark yellow box.
+// palette: faint text is too pale on light backgrounds, so it renders as
+// normal text, and inverted yellow search matches would show light text on a
+// dark yellow box.
 fn style_for_theme(mut style: Style, theme: Theme) -> Style {
     if theme == Theme::Dark {
         return style;
     }
 
-    if style.dimmed {
-        style.fg = LIGHT_BLACK;
-        style.dimmed = false;
-    }
+    style.dimmed = false;
     if style.inverted && style.fg == YELLOW && style.bg == DEFAULT {
         style.fg = DEFAULT;
         style.bg = YELLOW;
@@ -464,13 +462,13 @@ mod theme_tests {
     }
 
     #[test]
-    fn light_theme_renders_dimmed_text_in_gray_instead_of_faint() {
+    fn light_theme_renders_dimmed_text_as_normal_text() {
         let mut terminal = light_terminal();
 
         terminal.set_style(&DIMMED_STYLE).unwrap();
 
         assert!(!terminal.output.contains("\x1b[2m"));
-        assert!(terminal.output.contains("\x1b[38;5;"));
+        assert!(!terminal.output.contains("\x1b[38;5;"));
     }
 
     #[test]
