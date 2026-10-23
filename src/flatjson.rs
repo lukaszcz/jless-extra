@@ -319,16 +319,8 @@ impl FlatJson {
                 // sexp syntactical characters must be escaped
                 b' ' | b'"' | b'(' | b')' | b';' | b'\\' => return true,
                 // The start or end of a multiline comment "#| comment |#" must be escaped
-                b'|' => {
-                    if i < last_ch_index && bytes[i + 1] == b'#' {
-                        return true;
-                    }
-                }
-                b'#' => {
-                    if i < last_ch_index && bytes[i + 1] == b'|' {
-                        return true;
-                    }
-                }
+                b'|' if i < last_ch_index && bytes[i + 1] == b'#' => return true,
+                b'#' if i < last_ch_index && bytes[i + 1] == b'|' => return true,
                 // sexplib0 source matches [0 .. 32]. 32 is space, and I included
                 // that above more explicitly.
                 0..=31 | 127..=255 => return true,
