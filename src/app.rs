@@ -14,7 +14,7 @@ use crate::input::TuiEvent;
 use crate::input::TuiEvent::{KeyEvent, MouseEvent, WinChEvent};
 use crate::jsonstringunescaper::{UnescapeError, safe_unescape_json_string};
 use crate::lineprinter::{JS_IDENTIFIER, LineLayout};
-use crate::options::{DataFormat, Opt};
+use crate::options::Opt;
 use crate::screenwriter::{MessageSeverity, ScreenWriter, TtyOutput};
 use crate::search::{JumpDirection, SearchDirection, SearchState};
 use crate::terminal::Theme;
@@ -111,17 +111,11 @@ const ENABLE_MOUSE_BUTTON_TRACKING: &str = "\x1b[?1002h";
 impl App {
     pub fn new(
         opt: &Opt,
-        data: String,
-        data_format: DataFormat,
+        flatjson: flatjson::FlatJson,
         input_filename: String,
         stdout: TtyOutput,
         theme: Theme,
-    ) -> Result<App, String> {
-        let flatjson = match Self::parse_input(data, data_format) {
-            Ok(flatjson) => flatjson,
-            Err(err) => return Err(format!("Unable to parse input: {err:?}")),
-        };
-
+    ) -> App {
         let mut viewer = JsonViewer::new(flatjson, opt.mode);
         viewer.scrolloff_setting = opt.scrolloff;
         viewer.layout = LineLayout {
@@ -134,7 +128,7 @@ impl App {
         let screen_writer =
             ScreenWriter::init(stdout, Editor::<()>::new(), TTYDimensions::default(), theme);
 
-        Ok(App {
+        App {
             viewer,
             screen_writer,
             input_state: InputState::Default,
@@ -142,13 +136,6 @@ impl App {
             input_filename,
             search_state: SearchState::empty(),
             message: None,
-        })
-    }
-
-    fn parse_input(data: String, data_format: DataFormat) -> Result<flatjson::FlatJson, String> {
-        match data_format {
-            DataFormat::Json => flatjson::parse_top_level_json(data),
-            DataFormat::Yaml => flatjson::parse_top_level_yaml(data),
         }
     }
 

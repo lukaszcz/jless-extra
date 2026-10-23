@@ -56,6 +56,9 @@ fn main() {
         std::process::exit(0);
     }
 
+    // Parse before entering the alternate screen, so parse errors stay visible.
+    let flatjson = parse_input_or_exit(input_string, data_format);
+
     // We use freopen to remap /dev/tty to STDIN so that rustyline works when
     // JSON input is provided via STDIN. rustyline gets initialized when we
     // create the App, so by putting this before creating the app, we make
@@ -71,20 +74,7 @@ fn main() {
     ));
     let (theme, initial_input) = terminal::resolve_theme(opt.theme);
 
-    let mut app = match App::new(
-        &opt,
-        input_string,
-        data_format,
-        input_filename,
-        raw_stdout,
-        theme,
-    ) {
-        Ok(jl) => jl,
-        Err(err) => {
-            eprintln!("{err}");
-            std::process::exit(1);
-        }
-    };
+    let mut app = App::new(&opt, flatjson, input_filename, raw_stdout, theme);
 
     app.run(Box::new(input::get_input(initial_input)));
 }
@@ -96,15 +86,20 @@ fn print_pretty_printed_input(input: String, data_format: DataFormat) {
         return;
     }
 
-    let flatjson = match flatjson::parse_top_level_json(input) {
-        Ok(flatjson) => flatjson,
-        Err(err) => {
-            eprintln!("Unable to parse input: {err:?}");
-            std::process::exit(1);
-        }
+    let flatjson = parse_input_or_exit(input, data_format);
+    print!("{}", flatjson.pretty_printed());
+}
+
+fn parse_input_or_exit(input: String, data_format: DataFormat) -> flatjson::FlatJson {
+    let result = match data_format {
+        DataFormat::Json => flatjson::parse_top_level_json(input),
+        DataFormat::Yaml => flatjson::parse_top_level_yaml(input),
     };
 
-    print!("{}", flatjson.pretty_printed());
+    result.unwrap_or_else(|err| {
+        eprintln!("Unable to parse input: {err:?}");
+        std::process::exit(1);
+    })
 }
 
 fn get_input_and_filename(opt: &Opt) -> io::Result<(String, String)> {

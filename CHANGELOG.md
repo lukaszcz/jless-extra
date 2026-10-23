@@ -30,6 +30,10 @@ Improvements:
   writing current input as a sexp to a file. This is a temporary
   addition and will be removed once proper sexp support is added.
 
+Bug fixes:
+- Input parse errors are no longer hidden by the alternate screen when
+  jless runs in a terminal.
+
 v0.9.0 (2023-07-16)
 ==================
 
