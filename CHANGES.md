@@ -4,4 +4,5 @@ Changes with respect to upstream JLess:
 - OSC 52 clipboard,
 - selectable light and dark themes,
 - wrapping of long values,
-- ctrl-↑/↓ to scroll by one line and alt-←/→ to deeply collapse/expand.
+- ctrl-↑/↓ to scroll by one line and alt-←/→ to deeply collapse/expand,
+- lenient parsing of malformed JSON and JSON Lines.

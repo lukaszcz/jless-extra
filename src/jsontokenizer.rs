@@ -27,9 +27,14 @@ pub enum JsonToken {
     Number,
     // I get an error when I do [0-9a-fA-F]{4}.
     #[regex(
-        "\"((\\\\([\"\\\\/bfnrt]|u[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]))|[^\"\\\\\x00-\x1F])*\""
+        "\"((\\\\([\"\\\\/bfnrt]|u[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]))|[^\"\\\\\x00-\x1F])*\"",
+        priority = 3
     )]
     String,
+    // A string with invalid escapes or control characters, or unterminated
+    // before the end of the line.
+    #[regex(r#""([^"\\\r\n]|\\[^\r\n])*"?"#, priority = 2)]
+    InvalidString,
 
     // Whitespace; need separate newline token to handle newline-delimited JSON.
     #[token("\n")]

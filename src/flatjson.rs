@@ -62,9 +62,20 @@ pub struct FlatJson(
     pub String,
     // Max nesting depth.
     pub usize,
+    // 1-based input lines of parse errors; see `Value::Invalid`.
+    pub Vec<usize>,
 );
 
 impl FlatJson {
+    pub fn parse_error_summary(&self) -> Option<String> {
+        let first_line = self.3.first()?;
+        let count = self.3.len();
+        let plural = if count == 1 { "" } else { "s" };
+        Some(format!(
+            "{count} parse error{plural} in input (first on line {first_line})"
+        ))
+    }
+
     pub fn last_visible_index(&self) -> Index {
         let last_index = self.0.len() - 1;
 
@@ -397,6 +408,9 @@ impl FlatJson {
                 Value::Null | Value::EmptyObject | Value::EmptyArray => buf.push_str("()"),
                 Value::Boolean | Value::Number => buf.push_str(&self.1[row.range.clone()]),
                 Value::String => self.write_sexp_atom(&mut buf, row.range.clone())?,
+                Value::Invalid => {
+                    Self::escape_and_write_sexp_atom(&mut buf, &self.1[row.range.clone()])
+                }
                 Value::OpenContainer { .. } => buf.push('('),
                 Value::CloseContainer { .. } => buf.push(')'),
             }
@@ -572,7 +586,7 @@ impl Row {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum ContainerType {
     Object,
     Array,
@@ -609,6 +623,8 @@ pub enum Value {
     String,
     EmptyObject,
     EmptyArray,
+    // Unparsable input; its text is kept with control characters escaped.
+    Invalid,
     OpenContainer {
         container_type: ContainerType,
         collapsed: bool,
@@ -724,13 +740,13 @@ impl Value {
 }
 
 pub fn parse_top_level_json(json: String) -> Result<FlatJson, String> {
-    let (rows, pretty, depth) = jsonparser::parse(json)?;
-    Ok(FlatJson(rows, pretty, depth))
+    let (rows, pretty, depth, error_lines) = jsonparser::parse(json)?;
+    Ok(FlatJson(rows, pretty, depth, error_lines))
 }
 
 pub fn parse_top_level_yaml(yaml: String) -> Result<FlatJson, String> {
     let (rows, pretty, depth) = yamlparser::parse(yaml)?;
-    Ok(FlatJson(rows, pretty, depth))
+    Ok(FlatJson(rows, pretty, depth, vec![]))
 }
 
 #[cfg(test)]
@@ -1181,6 +1197,13 @@ mod tests {
 "#;
         let fj = parse_top_level_json(JSON.to_owned()).unwrap();
         assert_eq!(PRETTY, fj.sexp_string().unwrap());
+    }
+
+    #[test]
+    #[cfg(feature = "sexp")]
+    fn test_sexp_string_invalid_value() {
+        let fj = parse_top_level_json("{\"a\": x y}".to_owned()).unwrap();
+        assert_eq!("((a \"x y\"))\n", fj.sexp_string().unwrap());
     }
 
     #[test]

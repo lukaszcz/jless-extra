@@ -533,9 +533,12 @@ impl<'a, 'b> LinePrinter<'a, 'b> {
     }
 
     // Check if a line has a label. A line has a label if it has
-    // a key, or if we are in data mode and we have a parent.
+    // a key, or if we are in data mode and the parent is an array.
+    // (Invalid object entries may lack a key.)
     fn has_label(&self) -> bool {
-        self.row.key_range.is_some() || (self.mode == Mode::Data && self.row.parent.is_some())
+        self.row.key_range.is_some()
+            || (self.mode == Mode::Data
+                && matches!(self.row.parent, OptionIndex::Index(parent) if self.flatjson[parent].is_array()))
     }
 
     // Get the type of a label, either Key or Index.
@@ -858,6 +861,7 @@ impl<'a, 'b> LinePrinter<'a, 'b> {
             Value::String => terminal::GREEN,
             Value::EmptyObject => terminal::WHITE,
             Value::EmptyArray => terminal::WHITE,
+            Value::Invalid => terminal::RED,
             _ => unreachable!(),
         }
     }
@@ -1992,6 +1996,19 @@ mod tests {
 
         assert_eq!("_FG(LightBlack)_null_FG(Default)_,", line.terminal.output());
         assert_eq!(5, used_space);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_fill_invalid_value() -> std::fmt::Result {
+        let fj = parse_top_level_json("{\"a\": 1\n x\n}".to_owned()).unwrap();
+        let mut term = VisibleEscapesTerminal::new(false, true);
+        let mut line: LinePrinter = default_line_printer(&mut term, &fj, 2);
+
+        // No index label in data mode, even though x lacks a key.
+        line.print_line()?;
+        assert_eq!("_R_  _FG(Red)_x", line.terminal.output());
 
         Ok(())
     }

@@ -87,6 +87,9 @@ fn print_pretty_printed_input(input: String, data_format: DataFormat) {
     }
 
     let flatjson = parse_input_or_exit(input, data_format);
+    if let Some(summary) = flatjson.parse_error_summary() {
+        eprintln!("Warning: {summary}");
+    }
     print!("{}", flatjson.pretty_printed());
 }
 
@@ -97,7 +100,7 @@ fn parse_input_or_exit(input: String, data_format: DataFormat) -> flatjson::Flat
     };
 
     result.unwrap_or_else(|err| {
-        eprintln!("Unable to parse input: {err:?}");
+        eprintln!("Unable to parse input: {err}");
         std::process::exit(1);
     })
 }

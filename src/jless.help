@@ -209,6 +209,11 @@
       When the input is newline-delimited JSON, an actual newline will
       separate each top-level JSON element in the internal representation.
 
+      Unparsable parts of malformed JSON input are kept as they are (with
+      control characters escaped) and shown in red. Containers cut short
+      by the end of input or of a newline-delimited record end with
+      <truncated>.
+
                              [1mDATA MODE VS LINE MODE[0m
 
       jless starts in "data" mode, which displays the JSON data in a more

@@ -28,6 +28,7 @@ use crate::truncatedstrview::TruncatedStrView;
 //   - number
 //   - string
 //   - empty objects and arrays
+//   - invalid (unparsable) input
 // - Object Keys
 // - The ": " between an object key and its value
 // - Array indexes in data mode (e.g., "[123]")
@@ -46,6 +47,7 @@ use crate::truncatedstrview::TruncatedStrView;
 //     number      |     Magenta     |        X        | Yellow/Default |     Inverted + Bold
 //     string      |      Green      |        X        | Yellow/Default |     Inverted + Bold
 //  empty obj/arr  |      White      |        X        | Yellow/Default |     Inverted + Bold
+//     invalid     |       Red       |        X        | Yellow/Default |     Inverted + Bold
 //
 //  ^ Object values can't be focused
 //

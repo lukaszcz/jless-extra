@@ -8,7 +8,7 @@ Input data may come from stdin, so before the app starts `/dev/tty` is reopened 
 
 ## Event Loop
 
-Each event is handled, then the screen is redrawn and the message cleared. Handling is a small state machine:
+The first screen shows a warning if the input had parse errors. Each event is handled, then the screen is redrawn and the message cleared. Handling is a small state machine:
 
 - **Default** — digits accumulate a count prefix; most keys map directly to an `Action` for the viewer ([viewer.md](viewer.md)); some call `ScreenWriter` for display-only changes.
 - **Pending `p` / `y` / `z`** — the next key selects a print target, copy target, or window reposition; any other key cancels.

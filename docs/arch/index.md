@@ -1,6 +1,6 @@
 # jless Architecture Overview
 
-jless is a terminal pager for JSON and YAML. It parses the whole input up front into a flat array of rows, then runs a single-threaded event loop that turns key, mouse, and resize events into viewer actions and redraws the screen after each one. When stdout is not a TTY it only pretty-prints the input and exits.
+jless is a terminal pager for JSON and YAML. It parses the whole input up front into a flat array of rows, then runs a single-threaded event loop that turns key, mouse, and resize events into viewer actions and redraws the screen after each one. When stdout is not a TTY it only pretty-prints the input and exits. Malformed JSON is shown as far as it parses, with unparsable parts marked.
 
 Start here for the system shape, then read only the subsystem documents relevant to the task.
 

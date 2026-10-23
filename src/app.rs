@@ -116,6 +116,7 @@ impl App {
         stdout: TtyOutput,
         theme: Theme,
     ) -> App {
+        let parse_error_summary = flatjson.parse_error_summary();
         let mut viewer = JsonViewer::new(flatjson, opt.mode);
         viewer.scrolloff_setting = opt.scrolloff;
         viewer.layout = LineLayout {
@@ -135,7 +136,7 @@ impl App {
             input_buffer: vec![],
             input_filename,
             search_state: SearchState::empty(),
-            message: None,
+            message: parse_error_summary.map(|summary| (summary, MessageSeverity::Warn)),
         }
     }
 

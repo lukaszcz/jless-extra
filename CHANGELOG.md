@@ -2,6 +2,11 @@ main
 ====
 
 Improvements:
+- Malformed JSON and JSON Lines input is now displayed instead of rejected:
+  unparsable parts are shown in red, truncated containers end with a
+  `<truncated>` marker, and a warning reports the number of parse errors
+  and the first error line. jless still exits with an error if nothing in
+  the input is valid JSON.
 - `ctrl-↑` and `ctrl-↓` scroll up and down by one line, like `ctrl-y` and
   `ctrl-e`; `alt-←` and `alt-→` deeply collapse and expand the focused
   node and its siblings, like `C` and `E`.
